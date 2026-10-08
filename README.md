@@ -17,6 +17,44 @@ charts, and a personal buying list with a reason for each game.
 - **Cached.** Game data (`apps.json`), your lists (`users.json`) and every image (`images/`) are kept in the app's user-data folder, so reopening is instant and offline-friendly.
 - **Gentle on the sites.** All requests go through one per-host queue with jittered minimum gaps (Steam API 2.5 s, community 3.5 s, SteamDB 9 s, image CDN 0.3 s), Retry-After-aware backoff on 429/5xx, 25 games per store request, and a *Slowness* multiplier in Settings. Syncs can be cancelled; progress is saved after every batch.
 
+## Install
+
+Download the file for your system from the [Releases page](https://github.com/fadzlan/steam-workspace/releases).
+Releases are currently marked *pre-release*, so open the newest one yourself (GitHub's "Latest" badge will not point at it).
+File names carry the version, e.g. `Steam.Workspace.Setup.0.1.0.exe`.
+
+| Platform | File | How to install |
+| --- | --- | --- |
+| Windows | `Steam.Workspace.Setup.<version>.exe` | Run the installer and pick a folder. |
+| Windows (no install) | `Steam.Workspace.<version>.exe` | Portable build: put it anywhere and double-click. |
+| Linux (any distro) | `Steam.Workspace-<version>.AppImage` | `chmod +x Steam.Workspace-*.AppImage && ./Steam.Workspace-*.AppImage` |
+| Debian / Ubuntu / Mint | `steam-workspace_<version>_amd64.deb` | `sudo apt install ./steam-workspace_*_amd64.deb` |
+| Arch / Manjaro / EndeavourOS | `steam-workspace-bin-<version>-<rel>-x86_64.pkg.tar.zst` | `sudo pacman -U steam-workspace-bin-*.pkg.tar.zst` |
+| Arch (build it yourself) | `PKGBUILD` | Save it in an empty folder, then `makepkg -si` |
+
+macOS builds are not provided.
+
+### Notes
+
+- **Windows SmartScreen.** The binaries are not code-signed, so Windows shows "Windows protected your PC". Choose **More info → Run anyway**.
+- **AppImage needs FUSE 2.** If it refuses to start, install `libfuse2` (Debian/Ubuntu: `sudo apt install libfuse2`; Ubuntu 24.04: `libfuse2t64`; Arch: `fuse2`). You can also run it without FUSE: `./Steam.Workspace-*.AppImage --appimage-extract-and-run`.
+- **Sandbox errors on Linux.** On distributions that restrict unprivileged user namespaces (e.g. Ubuntu 24.04) the AppImage may print a `chrome-sandbox` error. The `.deb` and Arch packages install the sandbox helper correctly, so prefer those; as a last resort start the AppImage with `--no-sandbox`.
+- **Architectures.** Only 64-bit x86 (x64 / amd64 / x86_64) is built.
+- **Where data lives.** Cached game data, images and your lists are stored in the app's user-data folder (`~/.config/` on Linux, `%APPDATA%` on Windows). Uninstalling does not remove it; delete that folder to reset, or use *Settings → Clear image cache*.
+- **Updating.** There is no auto-update yet: install the newer release over the old one. Your data is kept.
+- **AUR.** The package is prepared for the Arch User Repository (`steam-workspace-bin`, `packaging/aur/`) but not published there yet. Until then use the `.pkg.tar.zst` or `PKGBUILD` above.
+
+### Run from source
+
+```
+git clone https://github.com/fadzlan/steam-workspace.git
+cd steam-workspace
+npm install
+npm start
+```
+
+Needs Node.js 20 or newer (22 is what CI uses). See *Develop* below for building installers yourself.
+
 ## Data sources
 
 | Data | Source |
@@ -62,8 +100,8 @@ resources/     bundled tag → category map used for the colours
 test/          node:test unit tests
 ```
 
-## Arch Linux (AUR)
+## Arch packaging
 
-`packaging/aur/PKGBUILD` builds `steam-workspace-bin` from the release `.deb`. CI publishes it to the AUR
-after each release when the repository secret `AUR_SSH_PRIVATE_KEY` is set. Release assets must be publicly downloadable.
-Manual build: `cd packaging/aur && makepkg -si`.
+`packaging/aur/PKGBUILD` builds `steam-workspace-bin` from the release `.deb`; CI runs it in an Arch container and attaches
+the resulting package and the `PKGBUILD` to every release. If the repository secret `AUR_SSH_PRIVATE_KEY` is set, CI also pushes
+the update to the AUR (`packaging/aur/publish.sh`).
