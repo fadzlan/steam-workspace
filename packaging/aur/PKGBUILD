@@ -1,0 +1,28 @@
+# Maintainer: fadzlan <fadzlan@gmail.com>
+# pkgver/_tag/sha256sums are rewritten by the "aur" job in .github/workflows/build.yml on each release.
+pkgname=steam-workspace-bin
+_pkgname=steam-workspace
+pkgver=0.1.0
+_tag=v0.1.0-build.4
+pkgrel=1
+pkgdesc='Steam wishlist workspace: tag bubbles, price/discount charts and a buying-decision list'
+arch=('x86_64')
+url='https://github.com/fadzlan/steam-workspace'
+license=('MIT')
+depends=('gtk3' 'nss' 'libnotify' 'libxss' 'libxtst' 'xdg-utils' 'at-spi2-core' 'libsecret' 'util-linux-libs')
+optdepends=('libappindicator-gtk3: tray icon support')
+provides=("$_pkgname")
+conflicts=("$_pkgname")
+options=('!strip' '!debug')
+noextract=("$_pkgname-$pkgver-$_tag.deb")
+source=("$_pkgname-$pkgver-$_tag.deb::$url/releases/download/$_tag/${_pkgname}_${pkgver}_amd64.deb")
+sha256sums=('741b98727ebed38da769605a4ecf1b3202fb7312df1c74d75c62c41f8cbed23a')
+
+package() {
+  # the .deb is an ar archive; its payload is data.tar.xz
+  bsdtar -xf "$srcdir/$_pkgname-$pkgver-$_tag.deb" -C "$srcdir" data.tar.xz
+  bsdtar -xf "$srcdir/data.tar.xz" -C "$pkgdir" --no-same-owner
+  chmod 4755 "$pkgdir/opt/Steam Workspace/chrome-sandbox"
+  install -d "$pkgdir/usr/bin"
+  ln -s "/opt/Steam Workspace/steam-workspace" "$pkgdir/usr/bin/$_pkgname"
+}

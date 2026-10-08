@@ -61,3 +61,9 @@ src/renderer/  UI: app.js (tables, list, settings), charts.js (bubbles, scatter)
 resources/     bundled tag → category map used for the colours
 test/          node:test unit tests
 ```
+
+## Arch Linux (AUR)
+
+`packaging/aur/PKGBUILD` builds `steam-workspace-bin` from the release `.deb`. CI publishes it to the AUR
+after each release when the repository secret `AUR_SSH_PRIVATE_KEY` is set. Release assets must be publicly downloadable.
+Manual build: `cd packaging/aur && makepkg -si`.

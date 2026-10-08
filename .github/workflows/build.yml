@@ -47,6 +47,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    outputs:
+      tag: ${{ steps.tag.outputs.name }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -65,3 +67,38 @@ jobs:
           files: artifacts/*
           prerelease: true
           generate_release_notes: true
+
+  # Publishes steam-workspace-bin to the AUR. Needs the repo secret AUR_SSH_PRIVATE_KEY
+  # (key registered on your AUR account) and a public repo/release so AUR users can download it.
+  aur:
+    needs: release
+    runs-on: ubuntu-latest
+    env:
+      AUR_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: steam-workspace-linux
+          path: artifacts
+      - name: Update PKGBUILD
+        if: env.AUR_KEY != ''
+        run: |
+          deb=$(ls artifacts/*.deb)
+          ver=$(node -p "require('./package.json').version")
+          sed -i \
+            -e "s/^pkgver=.*/pkgver=${ver}/" \
+            -e "s/^_tag=.*/_tag=${{ needs.release.outputs.tag }}/" \
+            -e "s/^pkgrel=.*/pkgrel=${GITHUB_RUN_NUMBER}/" \
+            -e "s/^sha256sums=.*/sha256sums=('$(sha256sum "$deb" | cut -d' ' -f1)')/" \
+            packaging/aur/PKGBUILD
+      - name: Publish to AUR
+        if: env.AUR_KEY != ''
+        uses: KSXGitHubActions/github-actions-deploy-aur@v4.1.1
+        with:
+          pkgname: steam-workspace-bin
+          pkgbuild: packaging/aur/PKGBUILD
+          commit_username: fadzlan
+          commit_email: fadzlan@gmail.com
+          ssh_private_key: ${{ env.AUR_KEY }}
+          commit_message: Update to ${{ needs.release.outputs.tag }}
