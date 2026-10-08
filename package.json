@@ -3,7 +3,10 @@
   "version": "0.1.0",
   "description": "Steam wishlist workspace: tag bubbles, price/discount charts and a buying-decision list.",
   "main": "src/main/main.js",
-  "author": "fadzlan",
+  "author": {
+    "name": "fadzlan",
+    "email": "fadzlan@gmail.com"
+  },
   "license": "MIT",
   "scripts": {
     "start": "electron .",
@@ -50,5 +53,6 @@
   "devDependencies": {
     "electron": "^44.7.0",
     "electron-builder": "^26.15.3"
-  }
+  },
+  "homepage": "https://github.com/fadzlan/steam-workspace"
 }
