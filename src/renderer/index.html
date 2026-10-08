@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' swimg: data:; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self'">
+<title>Steam Workspace</title>
+<link rel="stylesheet" href="fonts.css">
+<link rel="stylesheet" href="base.css">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div class="wrap">
+<header>
+ <div><h1>Steam Workspace</h1><div class="sub" id="stats">No profile loaded</div></div>
+ <div class="hdr-actions">
+  <input type="text" id="user" placeholder="Steam username or profile URL" aria-label="Steam username" spellcheck="false">
+  <button class="btn pri" id="sync" title="Fetch wishlist and any missing game data">Sync</button>
+  <button class="btn" id="prices" title="Re-fetch prices for every game (slow)">Refresh prices</button>
+  <button class="btn" id="cfg">Settings</button>
+ </div>
+</header>
+<div id="progress" class="progress" hidden>
+ <div class="pmsg"><span id="pmsg"></span><button class="btn" id="cancel">Cancel</button></div>
+ <div class="pbar"><i id="pfill"></i></div>
+</div>
+<ul id="warns" class="warns"></ul>
+<div class="legend" id="legend" style="margin-bottom:10px"></div>
+<div class="tabs" role="tablist">
+ <button role="tab" data-tab="list" aria-selected="true">Wishlist</button>
+ <button role="tab" data-tab="mine" aria-selected="false">My list <span class="badge" id="mycount">0</span></button>
+ <button role="tab" data-tab="bub" aria-selected="false">Tag bubbles</button>
+ <button role="tab" data-tab="pd" aria-selected="false">Price × Discount · tags</button>
+ <button role="tab" data-tab="cov" aria-selected="false">Price × Discount · covers</button>
+</div>
+
+<section id="v-list">
+<div class="layout">
+ <aside class="side">
+  <div class="panel" style="display:flex;flex-direction:column;min-height:0">
+   <h3>Filter by tag</h3>
+   <input type="search" id="tq" placeholder="Search tags…" aria-label="Search tags">
+   <div class="cats" id="cats" style="margin-top:8px"></div>
+   <div class="row" style="margin-top:8px">
+    <div class="seg" id="mode"><button data-v="and" aria-pressed="true">Match all</button><button data-v="or" aria-pressed="false">Match any</button></div>
+    <div class="seg" id="scope"><button data-v="all" aria-pressed="true">All tags</button><button data-v="shown" aria-pressed="false">Shown only</button></div>
+   </div>
+   <div class="taglist" id="taglist"></div>
+  </div>
+ </aside>
+ <div style="min-width:0">
+  <div class="selbar" id="selbar"></div>
+  <div class="toolbar">
+   <input class="grow" type="search" id="q" placeholder="Search name, developer, publisher…" aria-label="Search games">
+   <select id="ft" aria-label="Type"><option value="all">Games &amp; DLC</option><option value="game">Games</option><option value="dlc">DLC</option></select>
+   <select id="fs" aria-label="Sale"><option value="all">Any price</option><option value="sale">On sale</option></select>
+   <select id="fr" aria-label="Release"><option value="all">Any release</option><option value="out">Released</option><option value="soon">Unreleased</option></select>
+   <select id="fl" aria-label="List"><option value="all">All games</option><option value="in">In my list</option><option value="out">Not in my list</option></select>
+   <button class="btn" id="reset">Reset</button>
+  </div>
+  <div class="tblwrap"><table><thead><tr id="thead"></tr></thead><tbody id="tb"></tbody></table></div>
+  <div class="pager"><span class="sm" id="pinfo"></span><span class="row"><button class="btn" id="prev">← Prev</button><button class="btn" id="next">Next →</button></span></div>
+ </div>
+</div>
+</section>
+
+<section id="v-mine" hidden>
+ <div class="toolbar">
+  <select id="mwhy" aria-label="Filter by reason"></select>
+  <span class="sm" id="mtotal"></span>
+  <span class="grow"></span>
+  <button class="btn pri" id="bought" title="Re-sync, then drop games you now own from the wishlist and this list">I bought some games · refresh</button>
+ </div>
+ <div class="tblwrap"><table style="min-width:980px"><thead><tr id="mhead"></tr></thead><tbody id="mb"></tbody></table></div>
+ <p class="hint">Pick a reason for each game to keep your buying decisions explicit. Reasons are editable in Settings or with “New reason…”. History and the hover preview come from SteamDB.</p>
+</section>
+
+<section id="v-bub" hidden>
+ <div class="toolbar">
+  <div class="seg" id="bsrc"><button data-v="wish" aria-pressed="true">Wishlist</button><button data-v="mine" aria-pressed="false">My list</button></div>
+  <div class="seg" id="bscope"><button data-v="all" aria-pressed="true">All tags</button><button data-v="shown" aria-pressed="false">Shown only</button></div>
+  <label class="rng">Top <input type="range" id="topn" min="20" max="200" step="10" value="90"> <b id="topv" class="mono">90</b> tags</label>
+  <div class="cats" id="bcats"></div>
+ </div>
+ <div class="bubwrap"><div id="bub"></div></div>
+ <p class="hint">Bubble area = wishlisted games with that tag. The dark core inside a bubble = how many of those are in <b>My list</b>. Click a bubble to filter the wishlist.</p>
+</section>
+
+<section id="v-pd" hidden>
+ <div class="toolbar">
+  <div class="seg" id="psrc"><button data-v="wish" aria-pressed="true">Wishlist</button><button data-v="mine" aria-pressed="false">My list</button></div>
+  <label class="rng">Top <input type="range" id="pn" min="10" max="150" step="5" value="60"> <b id="pnv" class="mono">60</b> tags</label>
+  <div class="cats" id="pcats"></div>
+ </div>
+ <div class="bubwrap"><div id="pdchart" class="chart"></div></div>
+ <p class="hint">Each bubble is a tag, placed at the average discount (x) and average price (y) of its games; size = number of games. Free and unreleased games are left out.</p>
+</section>
+
+<section id="v-cov" hidden>
+ <div class="toolbar">
+  <div class="seg" id="csrc"><button data-v="wish" aria-pressed="true">Wishlist</button><button data-v="mine" aria-pressed="false">My list</button></div>
+  <label class="rng">Show <input type="range" id="cn" min="20" max="400" step="10" value="120"> <b id="cnv" class="mono">120</b> covers</label>
+  <label class="rng"><input type="checkbox" id="csale"> On sale only</label>
+  <span class="sm">Scroll to zoom · drag to pan</span>
+ </div>
+ <div class="bubwrap"><div id="covchart" class="chart"></div></div>
+ <p class="hint">Most-reviewed games in the current filter; games in My list get an accent border. Covers are downloaded slowly the first time and cached on disk.</p>
+</section>
+</div>
+
+<dialog id="dlg"></dialog>
+<div id="tip"></div>
+
+<script src="../../node_modules/d3/dist/d3.min.js"></script>
+<script src="../../resources/tag-categories.js"></script>
+<script src="app.js"></script>
+<script src="charts.js"></script>
+<script src="boot.js"></script>
+</body>
+</html>
