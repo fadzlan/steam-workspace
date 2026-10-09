@@ -304,9 +304,9 @@ async function openSettings() {
  <label>Store country (prices & currency, 2-letter code)<input type="text" id="s-cc" value="${esc(s.country)}" maxlength="2"></label>
  <label class="ck"><input type="checkbox" id="s-fam"${s.useFamily ? ' checked' : ''}> Read my Steam Family library (adds 👪 badges and a Family filter on the Wishlist tab)</label>
  <div class="sm" id="s-famstatus">${famStatus()}</div>
- <div class="row"><button class="btn" id="s-login">${s.hasToken ? 'Re-sign in to Steam' : 'Sign in to Steam to read family library'}</button>${s.hasToken ? '<button class="btn" id="s-logout">Sign out</button><span class="sm">signed in (token lasts ~24h)</span>' : ''}</div>
+ <div class="row"><button class="btn" id="s-login">${s.hasToken ? 'Re-sign in to Steam' : 'Sign in to Steam (reads your library and family library)'}</button>${s.hasToken ? '<button class="btn" id="s-logout">Sign out</button><span class="sm">signed in (token lasts ~24h)</span>' : ''}</div>
  <label>…or list family members' profiles (usernames or URLs, one per line; their game details must be public)<textarea id="s-mem">${esc(s.familyMembers)}</textarea></label>
- <label>Steam Web API key (optional, reads private-ish libraries more reliably)<input type="text" id="s-key" value="${esc(s.apiKey)}" autocomplete="off"></label>
+ <label>Steam Web API key (optional: an alternative to signing in for reading your library; free at steamcommunity.com/dev/apikey)<input type="text" id="s-key" value="${esc(s.apiKey)}" autocomplete="off"></label>
  <label>Firecrawl API key (optional, replaces the SteamDB browser window)<input type="text" id="s-fc" value="${esc(s.firecrawlKey || '')}" autocomplete="off" placeholder="fc-…"></label>
  <label class="ck"><input type="checkbox" id="s-usefc"${s.useFirecrawl ? ' checked' : ''}> Use Firecrawl for SteamDB (about 2 credits per game; no browser window or Cloudflare check)</label>
  <div class="row"><button class="btn" id="s-fctest">Test Firecrawl</button><span class="sm" id="s-fcres">Uses 1 credit.</span></div>

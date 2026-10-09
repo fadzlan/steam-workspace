@@ -46,16 +46,15 @@ class Steam {
     return out;
   }
 
-  // Owned appids of a public profile; null when the library is private.
-  async getOwned(steamid, apiKey, signal) {
-    if (apiKey) {
-      const j = await this._json(`https://${API}/IPlayerService/GetOwnedGames/v1/?key=${encodeURIComponent(apiKey)}&steamid=${steamid}&include_played_free_games=1`, signal);
-      const g = j.response && j.response.games;
-      return g ? g.map((x) => x.appid) : null;
-    }
-    const xml = await get(this.t, `https://steamcommunity.com/profiles/${steamid}/games?tab=all&xml=1`, { host: COMMUNITY, minMs: GAP[COMMUNITY], type: 'text', signal });
-    if (!/<gamesList>/.test(xml) || /<error>/.test(xml)) return null;
-    return [...xml.matchAll(/<appID>(\d+)<\/appID>/g)].map((m) => +m[1]);
+  // Owned appids, or null when they cannot be read. Steam no longer serves library pages to anonymous
+  // visitors (they redirect to the login page), so this needs a Web API key or a signed-in web token.
+  async getOwned(steamid, apiKey, signal, token) {
+    const auth = apiKey ? `key=${encodeURIComponent(apiKey)}` : token ? `access_token=${encodeURIComponent(token)}` : '';
+    if (!auth) return null;
+    const j = await this._json(`https://${API}/IPlayerService/GetOwnedGames/v1/?${auth}&steamid=${steamid}&include_played_free_games=1`, signal);
+    const g = j.response && j.response.games;
+    log.info(`owned games via ${apiKey ? 'API key' : 'sign-in token'} for ${steamid}: ${g ? g.length + ' games' : 'nothing returned (private profile or token rejected)'}`);
+    return g ? g.map((x) => x.appid) : null;
   }
 
   // Real Steam Family library, needs a web token from a signed-in store session.

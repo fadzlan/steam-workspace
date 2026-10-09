@@ -64,7 +64,7 @@ Needs Node.js 20 or newer (22 is what CI uses). See *Develop* below for building
 | Data | Source |
 | --- | --- |
 | Wishlist, prices, discount, reviews, tags, release, developer/publisher | Steam (`IWishlistService`, `IStoreBrowseService/GetItems`, `IStoreService/GetTagList`) |
-| Owned games | Public profile XML, or `IPlayerService/GetOwnedGames` if you provide an API key |
+| Owned games | `IPlayerService/GetOwnedGames` using your signed-in Steam session (Settings → Sign in to Steam) or a Steam Web API key. Steam no longer serves library pages to anonymous visitors, so a public profile alone is not enough |
 | Family library | Steam Family API using your own signed-in session token, or the listed family members' public libraries |
 | Price history, hover preview (a short muted trailer that plays when you hover a thumbnail) | SteamDB only, and only for games in **My list** (or on demand) |
 

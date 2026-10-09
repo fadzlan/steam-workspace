@@ -361,3 +361,28 @@ test('expired family sign-in is reported instead of silently skipped', async () 
   await e.sync();
   assert.ok(e.getState().status.warnings.some((w) => /expired/.test(w)));
 });
+
+test('own library: uses the sign-in token, or derives it from the family library, and warns otherwise', async () => {
+  // 1. token passed to getOwned
+  const s1 = fakeSteam({ owned: [2] });
+  let seenToken = null;
+  s1.getOwned = async (id, key, signal, token) => { seenToken = token; return token ? [2] : null; };
+  const e1 = mk(s1, { familyToken: 'tok', familyTokenAt: Date.now() });
+  await e1.sync();
+  assert.equal(seenToken, 'tok');
+  assert.ok(!e1.getState().games.some((g) => g.id === 2), 'owned game removed from wishlist');
+  // 2. no token, no key: warning
+  const s2 = fakeSteam();
+  s2.getOwned = async () => null;
+  const e2 = mk(s2);
+  await e2.sync();
+  assert.ok(e2.getState().status.warnings.some((w) => /Sign in to Steam/.test(w)));
+  // 3. getOwned fails but the family library lists own games
+  const s3 = fakeSteam();
+  s3.getOwned = async () => null;
+  s3.getFamilyLibrary = async () => [{ appid: 1, owners: ['76561190000000001'] }, { appid: 3, owners: ['76561190000000009'] }];
+  const e3 = mk(s3, { useFamily: true, familyToken: 'tok', familyTokenAt: Date.now() });
+  await e3.sync();
+  assert.deepEqual(e3.user().owned, [1]);
+  assert.ok(!e3.getState().status.warnings.some((w) => /Could not read your game library/.test(w)));
+});

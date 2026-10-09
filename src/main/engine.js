@@ -199,11 +199,12 @@ class Engine {
     }
 
     this._progress('owned', 'Checking your library…');
-    const own = await steam.getOwned(prof.steamid, settings.apiKey, signal).catch((e) => { this._warn(`Owned games: ${e.message}`); return null; });
+    const token = this._familyToken();
+    const own = await steam.getOwned(prof.steamid, settings.apiKey, signal, token).catch((e) => { if (signal.aborted) throw e; log.warn(`Owned games: ${e.message}`); return null; });
     if (own) { u.owned = own; u.ownedAt = Date.now(); }
-    else this._warn('Your game library is private, so purchases can only be detected through the wishlist itself. Make "Game details" public or add a Steam Web API key in Settings.');
 
     if (settings.useFamily) await this._syncFamily(u, signal);
+    if (!own && !u.owned) this._warn('Could not read your game library, so purchases can only be noticed through the wishlist itself. Steam only shares libraries with a signed-in session or a Steam Web API key: use Settings → Sign in to Steam, or add a Web API key (free at steamcommunity.com/dev/apikey).');
 
     // Purchased / removed games leave the buying list.
     const wl = new Set(u.wishlist.map((w) => w.appid));
@@ -219,6 +220,8 @@ class Engine {
     this._saveUsers();
   }
 
+  _familyToken() { const s = this.settings; return s.familyToken && Date.now() - s.familyTokenAt < DAY ? s.familyToken : null; }
+
   // Who in the family owns what: appid -> [steamid of each family member that owns it] (never includes you).
   async _syncFamily(u, signal) {
     const { steam, settings } = this;
@@ -233,7 +236,12 @@ class Engine {
     if (settings.familyToken && Date.now() - settings.familyTokenAt < DAY) {
       try {
         const apps = await steam.getFamilyLibrary(settings.familyToken, u.steamid, signal);
-        if (apps) { for (const a of apps) for (const sid of a.owners) add(a.appid, sid); ok = true; u.familySource = 'family-group'; }
+        if (apps) {
+          for (const a of apps) for (const sid of a.owners) add(a.appid, sid);
+          ok = true; u.familySource = 'family-group';
+          // fallback for your own library: the shared library lists the games you own as well
+          if (!u.owned) { u.owned = apps.filter((a) => a.owners.includes(u.steamid)).map((a) => a.appid); u.ownedAt = Date.now(); log.info(`own library derived from the family library: ${u.owned.length} games`); }
+        }
         else this._warn('Steam says you are not in a Family group (signed-in account).');
       } catch (e) { if (signal.aborted) throw e; this._warn(`Family library: ${e.message}`); }
     }
@@ -242,7 +250,7 @@ class Engine {
       try {
         const p = await steam.resolveProfile(m, signal);
         names[p.steamid] = p.name;
-        const owned = await steam.getOwned(p.steamid, settings.apiKey, signal);
+        const owned = await steam.getOwned(p.steamid, settings.apiKey, signal, this._familyToken());
         if (owned) { owned.forEach((a) => add(a, p.steamid)); ok = true; u.familySource = u.familySource || 'members'; }
         else this._warn(`${m}'s game library is private.`);
       } catch (e) { if (signal.aborted) throw e; this._warn(`${m}: ${e.message}`); }
