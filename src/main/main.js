@@ -37,14 +37,18 @@ function send(kind) {
   pushTimer = setTimeout(() => win && !win.isDestroyed() && win.webContents.send('state'), 120);
 }
 
-// swimg://thumb/123  ->  cached (or lazily, slowly downloaded) image
+// swimg://thumb/123  ->  cached (or lazily, slowly downloaded) image; swimg://hover/123 -> preview video.
+// Served through net.fetch(file://) so <video> gets Range support.
 function registerImageProtocol() {
   protocol.handle('swimg', async (req) => {
     const u = new URL(req.url);
     const file = await images.get(u.hostname, u.pathname.slice(1));
     if (!file) return new Response('', { status: 404 });
-    const body = fs.readFileSync(file);
-    return new Response(body, { headers: { 'content-type': EXT_MIME[path.extname(file)] || 'application/octet-stream', 'cache-control': 'max-age=31536000' } });
+    const res = await net.fetch(pathToFileURL(file).toString(), { headers: req.headers });
+    const headers = new Headers(res.headers);
+    headers.set('content-type', EXT_MIME[path.extname(file)] || 'application/octet-stream');
+    headers.set('cache-control', 'max-age=31536000');
+    return new Response(res.body, { status: res.status, headers });
   });
 }
 

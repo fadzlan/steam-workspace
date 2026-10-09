@@ -1,31 +1,33 @@
 'use strict';
-// Pure helpers for scraping SteamDB (kept separate from Electron so they can be unit tested).
+// Pure helpers for SteamDB (kept separate from Electron so they can be unit tested).
+// Formats are taken from SteamDB's own front-end code (app.js / hover.js).
 
-// {success, data:{final:[[ms, price], ...]}} -> {history:[[ms, cents]], low, lowAt}. Prices are in currency units.
+// GET /api/GetPriceHistory/?appid=&cc=  ->  {success, data:{history:[{x: ms, y: price, d: discount %, f: "RM70.60"}]}}
+// Returns {history:[[ms, cents]], low, lowAt}. y is in currency units; points with no price (y = 0) are dropped.
 function parseHistory(j) {
-  const d = (j && j.data) || {};
-  const raw = Array.isArray(d.final) ? d.final : Array.isArray(d.history) ? d.history : Array.isArray(d) ? d : null;
-  if (!raw || !raw.length) return null;
-  const scale = Array.isArray(d.final) ? 100 : 1;
-  const history = raw.map((p) => [Number(p[0]), Math.round(Number(p[1]) * scale)]).filter((p) => p[0] > 0 && p[1] >= 0);
+  const raw = j && j.success !== false && j.data && Array.isArray(j.data.history) ? j.data.history : null;
+  if (!raw) return null;
+  const history = raw
+    .map((p) => (Array.isArray(p) ? [Number(p[0]), Math.round(Number(p[1]) * 100)] : [Number(p.x), Math.round(Number(p.y) * 100)]))
+    .filter((p) => p[0] > 0 && p[1] > 0);
   if (!history.length) return null;
   let low = history[0];
   for (const p of history) if (p[1] < low[1]) low = p;
   return { history, low: low[1], lowAt: low[0] };
 }
 
-// First animated preview URL on a SteamDB app page (prefers ones named hover/animated).
-function findGif(html) {
-  const urls = [...String(html).matchAll(/https?:\/\/[^"'\s)]+\.(?:gif|webp)(?:\?[^"'\s)]*)?/gi)].map((m) => m[0]);
-  return urls.find((u) => /hover|animated/i.test(u)) || urls[0] || null;
-}
-
-// Any gif/video/hover-looking URLs on the page (for diagnostics).
-function mediaUrls(html) {
-  const all = [...String(html).matchAll(/https?:\/\/[^"'\s)<>]+\.(?:gif|webp|webm|mp4)(?:\?[^"'\s)<>]*)?|https?:\/\/[^"'\s)<>]*hover[^"'\s)<>]*/gi)].map((m) => m[0]);
-  return [...new Set(all)];
+// data-microtrailer on SteamDB's hover card: {"video":{"video/webm":"<path>","video/mp4":"<path>"},"time":123}
+// -> playable URL on the video CDN (webm preferred, Chromium plays it everywhere).
+function microtrailerUrl(videoCdn, json) {
+  let m;
+  try { m = typeof json === 'string' ? JSON.parse(json) : json; } catch (_) { return null; }
+  const v = m && m.video;
+  if (!v || !videoCdn) return null;
+  const path = v['video/webm'] || v['video/mp4'];
+  if (!path) return null;
+  return `${videoCdn}store_trailers/${path}${m.time ? `?t=${m.time}` : ''}`;
 }
 
 const CHALLENGE_TITLE = /just a moment|attention required|checking your browser|verify you are human/i;
 
-module.exports = { parseHistory, findGif, mediaUrls, CHALLENGE_TITLE };
+module.exports = { parseHistory, microtrailerUrl, CHALLENGE_TITLE };

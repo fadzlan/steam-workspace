@@ -4,7 +4,7 @@ const path = require('path');
 const { get } = require('./http');
 
 const CDN = 'cdn.cloudflare.steamstatic.com';
-const EXT_MIME = { '.jpg': 'image/jpeg', '.png': 'image/png', '.gif': 'image/gif', '.webp': 'image/webp' };
+const EXT_MIME = { '.jpg': 'image/jpeg', '.png': 'image/png', '.gif': 'image/gif', '.webp': 'image/webp', '.webm': 'video/webm', '.mp4': 'video/mp4' };
 
 // On-disk image cache. Files are fetched lazily, one at a time, the first time the UI asks.
 class Images {

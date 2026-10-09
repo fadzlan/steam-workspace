@@ -1,7 +1,7 @@
 'use strict';
 const { BrowserWindow } = require('electron');
 const { sleep } = require('./throttle');
-const { parseHistory, findGif, mediaUrls, CHALLENGE_TITLE } = require('./steamdb-parse');
+const { parseHistory, microtrailerUrl, CHALLENGE_TITLE } = require('./steamdb-parse');
 const log = require('./log');
 
 // steamdb.info sits behind Cloudflare, so plain HTTP gets a 403. Pages are loaded in a real
@@ -67,28 +67,40 @@ class SteamDB {
     w.loadURL(`https://${HOST}/`).catch(() => {});
   }
 
-  // One page load per game: price history (fetched from inside the page so cookies apply) + hover preview.
+  // One app-page load per game, then SteamDB's own two XHR endpoints from inside that page (so the
+  // Cloudflare cookie and referer apply): price history, and the hover card holding the micro-trailer.
   fetchApp(appid, cc, signal) {
     return this.t.run(HOST, GAP, async () => {
       const wc = await this._open(`https://${HOST}/app/${appid}/`, signal);
-      const page = await wc.executeJavaScript(`({ url: location.href, title: document.title, html: document.documentElement.outerHTML })`);
-      const gif = findGif(page.html);
+      const id = Number(appid);
+      const r = await wc.executeJavaScript(`(async () => {
+        const out = { url: location.href, title: document.title, videoCdn: document.body.dataset.videoCdn || '' };
+        const get = (u, accept) => fetch(u, { credentials: 'include', headers: { Accept: accept, 'X-Requested-With': 'XMLHttpRequest' } });
+        try {
+          const h = await get('/api/GetPriceHistory/?appid=${id}&cc=${encodeURIComponent(cc)}', 'application/json');
+          out.history = { status: h.status, more: h.headers.has('X-SteamDB-History-More'), body: await h.text() };
+        } catch (e) { out.historyErr = String(e); }
+        await new Promise((r) => setTimeout(r, 1500));
+        try {
+          const v = await get('/api/RenderAppHover/?appid=${id}', 'text/html');
+          const t = await v.text();
+          const el = new DOMParser().parseFromString(t, 'text/html').querySelector('.hover_video');
+          out.hover = { status: v.status, length: t.length, microtrailer: (el && el.dataset.microtrailer) || null };
+        } catch (e) { out.hoverErr = String(e); }
+        return out;
+      })()`);
       let hist = null;
-      let api = null;
-      try {
-        api = await wc.executeJavaScript(`fetch('/api/GetPriceHistory/?appid=${Number(appid)}&cc=${encodeURIComponent(cc)}', { credentials: 'include', headers: { 'x-requested-with': 'XMLHttpRequest' } }).then(async (r) => ({ status: r.status, type: r.headers.get('content-type'), body: await r.text() }))`);
-        hist = parseHistory(JSON.parse(api.body));
-      } catch (e) { log.warn(`SteamDB history for ${appid}: ${e.message}`); }
-      log.info(`SteamDB ${appid}: history=${hist ? hist.history.length + ' points' : 'none'} gif=${gif ? 'yes' : 'no'}`);
-      if (!hist || !gif) {
-        // enough detail to see what SteamDB really returned without dumping the whole page
+      try { hist = r.history ? parseHistory(JSON.parse(r.history.body)) : null; } catch (e) { log.warn(`SteamDB history for ${appid}: ${e.message}`); }
+      const video = r.hover && r.hover.microtrailer ? microtrailerUrl(r.videoCdn, r.hover.microtrailer) : null;
+      log.info(`SteamDB ${appid}: history=${hist ? hist.history.length + ' points' : 'none'}${r.history && r.history.more ? ' (truncated: 2-year history)' : ''} preview=${video ? 'yes' : 'no'}`);
+      if (!hist || !video) {
         log.info(`SteamDB ${appid} debug: ${JSON.stringify({
-          page: { url: page.url, title: page.title, htmlLength: page.html.length },
-          api: api ? { status: api.status, type: api.type, length: api.body.length, head: api.body.slice(0, 300) } : null,
-          media: mediaUrls(page.html).slice(0, 8),
+          page: { url: r.url, title: r.title },
+          history: r.history ? { status: r.history.status, length: r.history.body.length, head: r.history.body.slice(0, 300) } : r.historyErr,
+          hover: r.hover ? { status: r.hover.status, length: r.hover.length, microtrailer: r.hover.microtrailer } : r.hoverErr,
         })}`);
       }
-      return { history: hist ? hist.history : null, low: hist ? hist.low : null, lowAt: hist ? hist.lowAt : null, gif };
+      return { history: hist ? hist.history : null, low: hist ? hist.low : null, lowAt: hist ? hist.lowAt : null, more: !!(r.history && r.history.more), gif: video };
     }, signal);
   }
 }

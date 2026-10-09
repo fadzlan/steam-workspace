@@ -8,7 +8,7 @@ charts, and a personal buying list with a reason for each game.
 
 - **Any Steam user.** Type a username, profile URL or SteamID64 at the top and press **Sync**. The wishlist must be public.
 - **Wishlist tab.** Tag filtering (match all / any, shown-on-Steam vs. extra tags), search, sale / release / list filters, sortable columns, tag categories (genre, theme, players, visuals, features).
-- **My list tab.** Star (☆) any game to add it. Each item shows its tags under the thumbnail (toggle *Shown tags* / *All tags*) and has a customizable **Why buy it** dropdown (“＋ New reason…” or edit them in Settings), a roomy note box, current price, SteamDB price history sparkline and all-time low, and a running total.
+- **My list tab.** Star (☆) any game to add it. Each item shows its tags under the thumbnail (toggle *Shown tags* / *All tags*) and has a customizable **Why buy it** dropdown (“＋ New reason…” or edit them in Settings), a roomy note box, current price, SteamDB price history sparkline and lowest price (SteamDB gives anonymous visitors a 2-year history, so it reads *2-year low*), and a running total.
 - **Tag bubbles.** Area = games with the tag; the dark core inside a bubble is how many of those are in My list. Switch the source to *My list* to chart only the tags of games you saved.
 - **Price × Discount · tags.** Same axes (x = discount, y = price), one bubble per tag at its average discount/price.
 - **Price × Discount · covers.** Same axes with game thumbnails instead of bubbles (zoom and pan; list items are outlined).
@@ -64,9 +64,9 @@ Needs Node.js 20 or newer (22 is what CI uses). See *Develop* below for building
 | Wishlist, prices, discount, reviews, tags, release, developer/publisher | Steam (`IWishlistService`, `IStoreBrowseService/GetItems`, `IStoreService/GetTagList`) |
 | Owned games | Public profile XML, or `IPlayerService/GetOwnedGames` if you provide an API key |
 | Family library | Steam Family API using your own signed-in session token, or the listed family members' public libraries |
-| Price history, hover preview | SteamDB only, and only for games in **My list** (or on demand) |
+| Price history, hover preview (a short muted trailer that plays when you hover a thumbnail) | SteamDB only, and only for games in **My list** (or on demand) |
 
-Steam is always preferred; SteamDB is queried only for history and the animated preview.
+Steam is always preferred; SteamDB is queried only for history and the hover preview.
 
 ### Family library
 
@@ -78,13 +78,13 @@ Steam is always preferred; SteamDB is queried only for history and the animated 
 ### SteamDB and Cloudflare
 
 SteamDB blocks plain HTTP clients, so each game's page is loaded once in a real Chromium window with a persistent session
-(price history is read from inside that page, so it needs only one SteamDB request per game).
+(its price-history and hover-card requests are then made from inside that page, so each game costs one page load plus two small requests).
 
 When SteamDB shows a Cloudflare / human check, the app opens that window in front of you and shows a banner. Complete the
 check; the window then closes by itself and the load continues (it waits up to 3 minutes). The Cloudflare cookie is kept, so
 you should only see it occasionally. *Settings → Open SteamDB check* opens the same window if you want to pass the check ahead of time.
 
-Scraping SteamDB is best-effort: the price-history JSON and hover-preview URL are not an official API and may change. If they do,
+Scraping SteamDB is best-effort: the price-history and hover-card endpoints are SteamDB's own front-end calls, not an official API, and may change. If they do,
 the app tells you and the rest keeps working; the details are in the log.
 
 ## Develop

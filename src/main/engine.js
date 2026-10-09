@@ -55,7 +55,7 @@ class Engine {
     out.list = u.list.map((i) => {
       const a = this.apps[i.appid] || {};
       const db = a.db || null;
-      return { ...i, history: db ? db.history : null, low: db ? db.low : null, lowAt: db ? db.lowAt : null };
+      return { ...i, history: db ? db.history : null, low: db ? db.low : null, lowAt: db ? db.lowAt : null, more: !!(db && db.more) };
     });
     return out;
   }
@@ -279,7 +279,7 @@ class Engine {
     const a = this.apps[appid];
     if (!a) throw new Error('Unknown game');
     const r = await this.steamdb.fetchApp(appid, this.settings.country.toLowerCase(), signal);
-    if (!r.history && !r.gif) throw new Error('SteamDB returned no history or preview for this game (the page layout may have changed, see the log).');
+    if (!r.history && !r.gif) throw new Error('SteamDB returned no price history or preview for this game (see the log for what it sent).');
     a.db = { ...r, at: Date.now() };
     this.appsF.save();
     this.emit('state');

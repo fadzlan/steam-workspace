@@ -59,13 +59,19 @@ function pass(g, skipTags) {
 
 // ---- thumbs (cached on disk by the main process) ------------------------------------
 const thumb = (g) => `<img loading="lazy" alt="" src="swimg://thumb/${g.id}" data-id="${g.id}" data-gif="${g.gif ? 1 : ''}">`;
+// Hover preview: SteamDB's micro-trailer (muted, looping) plays over the thumbnail.
 document.addEventListener('mouseover', (e) => {
   const i = e.target.closest && e.target.closest('img[data-gif="1"]');
-  if (i) { i.dataset.prev = i.src; i.src = `swimg://hover/${i.dataset.id}`; i.classList.add('hov'); }
+  if (!i || i.parentNode.querySelector('video')) return;
+  const v = document.createElement('video');
+  Object.assign(v, { src: `swimg://hover/${i.dataset.id}`, muted: true, loop: true, autoplay: true, playsInline: true, className: 'hovervid' });
+  v.onerror = () => v.remove();
+  i.parentNode.appendChild(v);
+  v.play().catch(() => {});
 });
 document.addEventListener('mouseout', (e) => {
-  const i = e.target.closest && e.target.closest('img[data-prev]');
-  if (i && !i.contains(e.relatedTarget)) { i.src = i.dataset.prev; delete i.dataset.prev; i.classList.remove('hov'); }
+  const th = e.target.closest && e.target.closest('.th');
+  if (th && !th.contains(e.relatedTarget)) th.querySelectorAll('video').forEach((v) => v.remove());
 });
 
 // ---- wishlist table --------------------------------------------------------------------
@@ -180,7 +186,7 @@ function renderMine() {
     if (!g) return `<tr><td></td><td>App ${i.appid} <span class="sm">(details pending)</span></td><td colspan="4"></td><td><button class="btn" data-rm="${i.appid}">Remove</button></td></tr>`;
     total += g.fin || 0;
     const hist = i.history
-      ? `${spark(i.history)}<div class="sm">Low ${price(i.low)}${g.fin && g.fin <= i.low ? ' <b style="color:var(--good)">at low</b>' : ''}<br>${new Date(i.lowAt).toISOString().slice(0, 10)}</div>`
+      ? `${spark(i.history)}<div class="sm">${i.more ? '2-year low' : 'Low'} ${price(i.low)}${g.fin && g.fin <= i.low ? ' <b style="color:var(--good)">at low</b>' : ''}<br>${new Date(i.lowAt).toISOString().slice(0, 10)}</div>`
       : `<button class="btn" data-db="${g.id}">Load from SteamDB</button>`;
     const tags = g.tags.map((t, i) => [t, i]).filter(([, i]) => S.mtags === 'all' || i < 5).map(([t, i]) => chip(g, t, i)).join('');
     return `<tr><td style="width:34px">${starBtn(g)}</td><td>${gameCell(g)}<div class="tags mtags">${tags}</div></td>

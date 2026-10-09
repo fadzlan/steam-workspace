@@ -137,11 +137,14 @@ test('images fall back to hashed asset URLs when the legacy path 404s', async ()
 });
 
 test('SteamDB parsing helpers', () => {
-  const { parseHistory, findGif, CHALLENGE_TITLE } = require('../src/main/steamdb-parse');
-  const h = parseHistory({ success: true, data: { final: [[1000, 12.5], [2000, 6.25], [3000, 12.5]] } });
+  const { parseHistory, microtrailerUrl, CHALLENGE_TITLE } = require('../src/main/steamdb-parse');
+  const h = parseHistory({ success: true, data: { history: [{ x: 1000, y: 12.5, d: 0, f: 'RM12.50' }, { x: 2000, y: 6.25, d: 50 }, { x: 3000, y: 0 }, { x: 4000, y: 12.5 }] } });
   assert.deepEqual([h.low, h.lowAt, h.history.length, h.history[0][1]], [625, 2000, 3, 1250]);
-  assert.equal(parseHistory({ data: {} }), null);
-  assert.equal(findGif('<img src="https://x/a.gif"><img src="https://x/hover.gif?t=1">'), 'https://x/hover.gif?t=1');
-  assert.deepEqual(require('../src/main/steamdb-parse').mediaUrls('<video src="https://x/a.webm"><img src="https://x/hover_1.png">'), ['https://x/a.webm', 'https://x/hover_1.png']);
+  assert.equal(parseHistory({ success: false, error: 'x' }), null);
+  assert.equal(parseHistory({ success: true, data: { history: [] } }), null);
+  const mt = JSON.stringify({ video: { 'video/mp4': 'a/movie.mp4', 'video/webm': 'a/movie.webm' }, time: 77 });
+  assert.equal(microtrailerUrl('https://cdn/', mt), 'https://cdn/store_trailers/a/movie.webm?t=77');
+  assert.equal(microtrailerUrl('', mt), null);
+  assert.equal(microtrailerUrl('https://cdn/', 'not json'), null);
   assert.ok(CHALLENGE_TITLE.test('Just a moment...') && !CHALLENGE_TITLE.test('Quake 4 · SteamDB'));
 });
