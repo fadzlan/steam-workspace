@@ -396,3 +396,45 @@ test('Firecrawl source: key and credit problems are fatal; HTML-wrapped JSON sti
   assert.deepEqual(jsonFromBody('<html><body><pre>{"a":1}</pre></body></html>'), { a: 1 });
   setFetch((...a) => fetch(...a));
 });
+
+const HIST_JSON = () => JSON.stringify({ success: true, data: { history: [{ x: Date.now() - 800 * 864e5, y: 90, d: 0 }, { x: Date.now() - 100 * 864e5, y: 60, d: 33 }, { x: Date.now() - 5 * 864e5, y: 79.6, d: 0 }] } });
+
+test('Firecrawl history probe finds the browser-script method first, then the direct request, else none', async () => {
+  const { Firecrawl } = require('../src/main/firecrawl');
+  const { setFetch } = require('../src/main/http');
+  const fc = new Firecrawl(new Throttle(() => 0), () => 'fc-test1234567');
+  // 1. executeJavascript works
+  setFetch(fakeFirecrawlFetch((b) => (b.actions ? { json: { success: true, data: { markdown: PAGE, actions: { javascriptReturns: [{ type: 'string', value: HIST_JSON() }] } } } } : { json: { success: true, data: { rawHtml: '{"success":false}' } } })));
+  assert.equal((await fc.probe('my')).mode, 'js');
+  // 2. only the direct request with headers works
+  const f2 = fakeFirecrawlFetch((b) => (b.actions ? { json: { success: true, data: { markdown: PAGE, actions: { javascriptReturns: [{ value: {} }] } } } } : { json: { success: true, data: { rawHtml: HIST_JSON() } } }));
+  setFetch(f2);
+  assert.equal((await fc.probe('my')).mode, 'headers');
+  assert.equal(f2.reqs[1].body.headers.Referer, 'https://steamdb.info/app/1672500/');
+  // 3. nothing works
+  setFetch(fakeFirecrawlFetch(() => ({ json: { success: true, data: { rawHtml: '{"success":false}', markdown: PAGE } } })));
+  assert.equal((await fc.probe('my')).mode, 'none');
+  setFetch((...a) => fetch(...a));
+});
+
+test('Firecrawl fetchApp uses the saved history method and adds the lowest-ever price', async () => {
+  const { Firecrawl } = require('../src/main/firecrawl');
+  const { setFetch } = require('../src/main/http');
+  const fc = new Firecrawl(new Throttle(() => 0), () => 'fc-test1234567');
+  const jsF = fakeFirecrawlFetch(() => ({ json: { success: true, data: { markdown: PAGE, actions: { javascriptReturns: [{ value: HIST_JSON() }] } } } }));
+  setFetch(jsF);
+  let r = await fc.fetchApp(1672500, 'my', undefined, { price: 'RM79.60', mode: 'js' });
+  assert.equal(jsF.reqs.length, 1, 'js mode: one request for page + history');
+  assert.deepEqual([r.history.length, r.low, r.allTimeLow, r.more, r.allTime], [3, 6000, 5970, true, false]);
+  assert.ok(r.gif.includes('microtrailer.webm'));
+  const hdF = fakeFirecrawlFetch((b) => (b.url.includes('/api/') ? { json: { success: true, data: { rawHtml: HIST_JSON() } } } : { json: { success: true, data: { markdown: PAGE } } }));
+  setFetch(hdF);
+  r = await fc.fetchApp(1672500, 'my', undefined, { price: 'RM79.60', mode: 'headers' });
+  assert.equal(hdF.reqs.length, 2);
+  assert.equal(r.history.length, 3);
+  const none = fakeFirecrawlFetch(() => ({ json: { success: true, data: { markdown: PAGE } } }));
+  setFetch(none);
+  r = await fc.fetchApp(1672500, 'my', undefined, { price: 'RM79.60', mode: '' });
+  assert.deepEqual([r.history, r.low, r.allTime], [null, 5970, true]);
+  setFetch((...a) => fetch(...a));
+});

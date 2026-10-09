@@ -16,6 +16,7 @@ contextBridge.exposeInMainWorld('api', {
   listRemove: (id) => call('list:remove', id),
   listSet: (id, p) => call('list:set', id, p),
   setWhys: (a) => call('whys', a),
+  firecrawlProbe: () => call('firecrawl:probe'),
   firecrawlTest: () => call('firecrawl:test'),
   bgStart: (scope) => call('bg:start', scope),
   bgStop: () => call('bg:stop'),

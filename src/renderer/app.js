@@ -245,7 +245,8 @@ function histCell(g, i) {
   if (!i.history && i.low == null) return `<button class="btn" data-db="${g.id}">Load from SteamDB</button>`;
   const label = i.allTime ? 'Lowest ever' : i.more ? '2-year low' : 'Low';
   const date = i.lowAt ? `<br>${new Date(i.lowAt).toISOString().slice(0, 10)}` : '';
-  return `${spark(i.history)}<div class="sm">${label} ${price(i.low)}${g.fin && g.fin <= i.low ? ' <b style="color:var(--good)">at low</b>' : ''}${date}</div>` +
+  const ever = i.history && i.allTimeLow != null && i.allTimeLow < i.low ? `<br>Lowest ever ${price(i.allTimeLow)}` : '';
+  return `${spark(i.history)}<div class="sm">${label} ${price(i.low)}${g.fin && g.fin <= i.low ? ' <b style="color:var(--good)">at low</b>' : ''}${date}${ever}</div>` +
     (stale ? `<button class="btn warn" data-db="${g.id}" title="The sale this data was fetched during has ended, so it is out of date">Sale ended · update</button>`
            : `<button class="btn tiny" data-db="${g.id}" title="Refresh from SteamDB${i.dbAt ? ' (last fetched ' + new Date(i.dbAt).toLocaleString() + ')' : ''}">↻ refresh</button>`);
 }
@@ -310,8 +311,9 @@ async function openSettings() {
  <label>…or list family members' profiles (usernames or URLs, one per line; their game details must be public)<textarea id="s-mem">${esc(s.familyMembers)}</textarea></label>
  <label>Steam Web API key (optional: an alternative to signing in for reading your library; free at steamcommunity.com/dev/apikey)<input type="text" id="s-key" value="${esc(s.apiKey)}" autocomplete="off"></label>
  <label>Firecrawl API key (optional, replaces the SteamDB browser window)<input type="text" id="s-fc" value="${esc(s.firecrawlKey || '')}" autocomplete="off" placeholder="fc-…"></label>
- <label class="ck"><input type="checkbox" id="s-usefc"${s.useFirecrawl ? ' checked' : ''}> Use Firecrawl for SteamDB (1 credit per game; no browser window or Cloudflare check; gives the lowest price ever + preview, no price graph)</label>
+ <label class="ck"><input type="checkbox" id="s-usefc"${s.useFirecrawl ? ' checked' : ''}> Use Firecrawl for SteamDB (no browser window or Cloudflare check; 1 credit per game for the lowest price ever + preview, more if the price graph is enabled below)</label>
  <div class="row"><button class="btn" id="s-fctest">Test Firecrawl</button><span class="sm" id="s-fcres">Uses 1 credit.</span></div>
+ <div class="row"><button class="btn" id="s-fcprobe">Find a way to get the price graph</button><span class="sm" id="s-fcprobeinfo">${s.fcHistoryMode === 'js' || s.fcHistoryMode === 'headers' ? 'Found: ' + s.fcHistoryMode + '. Up to 3 credits to re-check.' : s.fcHistoryMode === 'none' ? 'Not available through Firecrawl (last check).' : 'Not checked yet. Uses up to 3 credits.'}</span></div>
  <label>Slowness multiplier (1 = default pacing, 2 = twice as slow)<input type="text" id="s-slow" value="${s.slowness}"></label>
  <label>“Why buy” reasons (one per line)<textarea id="s-why">${esc(whys)}</textarea></label>
  <hr>
@@ -327,6 +329,12 @@ async function openSettings() {
       if (!key) { out.textContent = 'Enter the API key first.'; return; }
       out.textContent = 'Testing…';
       try { await api.setSettings({ firecrawlKey: key }); const r = await api.firecrawlTest(); out.textContent = (r.ok ? '✓ ' : '⚠ ') + r.message; } catch (e) { out.textContent = '✗ ' + e.message; }
+    };
+    d.querySelector('#s-fcprobe').onclick = async () => {
+      const out = d.querySelector('#s-fcprobeinfo'), key = d.querySelector('#s-fc').value.trim();
+      if (!key) { out.textContent = 'Enter the API key first.'; return; }
+      out.textContent = 'Trying… (up to 3 credits)';
+      try { await api.setSettings({ firecrawlKey: key }); const r = await api.firecrawlProbe(); out.textContent = (r.mode === 'none' ? '⚠ ' : '✓ ') + r.message; } catch (e) { out.textContent = '✗ ' + e.message; }
     };
     d.querySelector('#s-sdb').onclick = () => api.steamdbCheck();
     d.querySelector('#s-clr').onclick = async () => { await api.cacheClear(); d.querySelector('#s-clr').textContent = 'Cleared'; };

@@ -85,8 +85,8 @@ Press **Sync**. Family-owned games then show a 👪 badge with the owner names, 
 If you have a [Firecrawl](https://firecrawl.dev) API key, put it in *Settings → Firecrawl API key*, tick **Use Firecrawl for SteamDB** and press **Test Firecrawl** (1 credit).
 SteamDB pages are then fetched by Firecrawl instead of the browser window, so there is **no Cloudflare check on your machine**.
 
-- **1 credit per game**: it reads the game's SteamDB app page, which lists the **lowest price ever recorded** in every currency (matched to your store country by today's Steam price) and the preview video link.
-- **No price graph:** SteamDB's price-history endpoint rejects Firecrawl's requests (HTTP 406), so Firecrawl loads show *Lowest ever RMxx* with no sparkline or date. Use the browser source for the graph.
+- **From 1 credit per game**: it reads the game's SteamDB app page, which lists the **lowest price ever recorded** in every currency (matched to your store country by today's Steam price) and the preview video link.
+- **Price graph (2-year history):** SteamDB's price-history endpoint rejects a plain Firecrawl request (HTTP 406). Press **Find a way to get the price graph** in Settings (up to 3 credits, once): it tries running SteamDB's own request inside the loaded page (Firecrawl's browser script action, 1 request per game) and then a direct request with browser headers (2 credits per game), and remembers whichever works. If neither does, loads show *Lowest ever RMxx* with no graph; use the browser source for the graph. When the graph works, a *Lowest ever* line is added if it is below the 2-year low.
 - The background loader waits only 8-15 seconds between games instead of 1-2 minutes.
 - If Firecrawl rejects the key or runs out of credits, the background load stops, the banner says why and offers **Open Settings** and **Resume**.
 
