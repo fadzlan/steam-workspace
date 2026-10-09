@@ -85,3 +85,21 @@ test('normalizeItem maps store response', () => {
   assert.deepEqual([n.id, n.disc, n.orig, n.fin, n.rp, n.rc, n.st, n.tagids], [5, 50, 2000, 1000, 90, 12, 2, [1]]);
   assert.ok(normalizeItem({ success: 2, id: 9 }).gone);
 });
+
+test('games Steam no longer returns are "unavailable", not pending, and retried weekly', async () => {
+  const s = fakeSteam();
+  const base = s.getItems;
+  s.getItems = async (ids) => (await base(ids)).filter((g) => g.id !== 4);
+  const e = mk(s);
+  await e.sync();
+  const c = e.getState().counts;
+  assert.equal(c.pending, 0);
+  assert.equal(c.unavailable, 1);
+  const n = s.calls.length;
+  await new Promise((r) => setTimeout(r, 5));
+  await e.sync('prices');
+  assert.equal(s.calls.length, n + 1, 'prices mode refetches visible games');
+  e.apps[4].at = Date.now();
+  await e.sync();
+  assert.equal(s.calls.length, n + 1, 'unavailable games are not refetched within a week');
+});

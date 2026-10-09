@@ -36,16 +36,17 @@ class Engine {
     if (!u) return out;
     const owned = new Set(u.owned || []);
     const fam = new Set(s.excludeFamily ? u.family || [] : []);
-    let hiddenOwned = 0, hiddenFamily = 0, pending = 0;
+    let hiddenOwned = 0, hiddenFamily = 0, pending = 0, unavailable = 0;
     for (const w of u.wishlist) {
       if (owned.has(w.appid)) { hiddenOwned++; continue; }
       if (fam.has(w.appid)) { hiddenFamily++; continue; }
       const a = this.apps[w.appid];
+      if (a && a.gone) { unavailable++; continue; } // Steam returns nothing: delisted, removed or region-locked
       if (!a || !a.name) { pending++; continue; }
       out.games.push({ ...a, added: w.added, db: undefined, hasDb: !!a.db, gif: !!(a.db && a.db.gif) });
     }
     out.profile = { steamid: u.steamid, name: u.name, ownedKnown: u.owned != null, familyKnown: u.family != null, familyAt: u.familyAt || 0, syncedAt: u.syncedAt || 0 };
-    out.counts = { wishlist: u.wishlist.length, hiddenOwned, hiddenFamily, pending };
+    out.counts = { wishlist: u.wishlist.length, hiddenOwned, hiddenFamily, pending, unavailable };
     out.whys = u.whys || DEFAULT_WHYS;
     out.list = u.list.map((i) => {
       const a = this.apps[i.appid] || {};
@@ -195,7 +196,7 @@ class Engine {
     // list items first, then newest wishlist additions
     wanted.sort((a, b) => (inList.has(b.appid) - inList.has(a.appid)) || b.added - a.added);
     const cutoff = Date.now() - (mode === 'prices' ? 0 : DAY);
-    const need = wanted.map((w) => w.appid).filter((id) => { const a = this.apps[id]; return !a || (a.at || 0) < cutoff; });
+    const need = wanted.map((w) => w.appid).filter((id) => { const a = this.apps[id]; return !a || (a.at || 0) < (a.gone ? Date.now() - 7 * DAY : cutoff); });
     void visible;
     const cc = this.settings.country;
     let done = 0;

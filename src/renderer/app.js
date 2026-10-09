@@ -294,7 +294,7 @@ function renderChrome() {
   const st = SW.st, c = st.counts || {};
   $('#stats').textContent = st.profile
     ? `${st.profile.name} · ${SW.games.length.toLocaleString()} wishlisted titles · ${Object.keys(st.tags).length} tags` +
-      (c.hiddenOwned ? ` · ${c.hiddenOwned} owned hidden` : '') + (c.hiddenFamily ? ` · ${c.hiddenFamily} in family library hidden` : '') + (c.pending ? ` · ${c.pending} pending` : '')
+      (c.hiddenOwned ? ` · ${c.hiddenOwned} owned hidden` : '') + (c.hiddenFamily ? ` · ${c.hiddenFamily} in family library hidden` : '') + (c.pending ? ` · ${c.pending} pending` : '') + (c.unavailable ? ` · ${c.unavailable} unavailable on Steam` : '')
     : 'No profile loaded';
   if (document.activeElement !== $('#user')) $('#user').value = st.settings.username || '';
   $('#legend').innerHTML = CATN.map((n, i) => `<span class="it"><i class="sw" style="background:var(--c${i})"></i>${n}</span>`).join('') +
