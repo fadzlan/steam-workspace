@@ -6,15 +6,16 @@ const { assetUrl } = require('./steam');
 
 const DAY = 864e5;
 const DEFAULT_WHYS = ['Great price', 'Wanted for a long time', 'Friends play it', 'Highly rated', 'Genre I love', 'Near historical low', 'Good for the family'];
-const DEFAULT_SETTINGS = { username: '', country: 'MY', useFamily: false, familyMembers: '', apiKey: '', slowness: 1, familyToken: null, familyTokenAt: 0 };
+const DEFAULT_SETTINGS = { username: '', country: 'MY', useFamily: false, familyMembers: '', apiKey: '', firecrawlKey: '', useFirecrawl: false, slowness: 1, familyToken: null, familyTokenAt: 0 };
 const BATCH = 25;
 
 // Everything stateful and network-driven lives here; electron-specific bits are injected
 // so this can be unit tested with fakes.
 class Engine {
-  constructor({ dir, steam, steamdb, emit }) {
+  constructor({ dir, steam, steamdb, firecrawl, emit }) {
     this.steam = steam;
     this.steamdb = steamdb;
+    this.firecrawl = firecrawl || null;
     this.emit = emit || (() => {});
     this.settingsF = new JsonFile(path.join(dir, 'settings.json'), DEFAULT_SETTINGS);
     if (this.settingsF.data.excludeFamily) this.settingsF.data.useFamily = true; // old name of the option
@@ -24,7 +25,9 @@ class Engine {
     this.status = { running: false, phase: '', done: 0, total: 0, msg: '', warnings: [] };
     this.abort = null;
     this.bg = { running: false };
-    this.bgDelayMs = () => 60000 + Math.random() * 60000; // 1-2 minutes between SteamDB games
+    // 1-2 minutes between SteamDB games when we drive a browser against SteamDB ourselves; Firecrawl
+    // requests come from its own infrastructure, so a short pause is enough.
+    this.bgDelayMs = () => (this._useFirecrawl() ? 8000 + Math.random() * 7000 : 60000 + Math.random() * 60000);
   }
 
   get settings() { return this.settingsF.data; }
@@ -305,10 +308,14 @@ class Engine {
     }
   }
 
+  _useFirecrawl() { return !!(this.firecrawl && this.settings.useFirecrawl && this.settings.firecrawlKey); }
+
   async fetchSteamDb(appid, signal) {
     const a = this.apps[appid];
     if (!a) throw new Error('Unknown game');
-    const r = await this.steamdb.fetchApp(appid, this.settings.country.toLowerCase(), signal);
+    const src = this._useFirecrawl() ? this.firecrawl : this.steamdb;
+    if (!src) throw new Error('SteamDB is not available.');
+    const r = await src.fetchApp(appid, this.settings.country.toLowerCase(), signal);
     if (!r.history && !r.gif) throw Object.assign(new Error('SteamDB returned no price history or preview for this game (see the log for what it sent).'), { noData: true });
     a.db = { ...r, at: Date.now(), saleEnd: a.end || 0 }; // saleEnd: the sale this data was fetched during (to know when it is stale)
     this.appsF.save();
@@ -342,7 +349,7 @@ class Engine {
 
   bgStart(scope = 'mine') {
     if (this.bg.running) return;
-    if (!this.steamdb) throw new Error('SteamDB is not available.');
+    if (!this.steamdb && !this._useFirecrawl()) throw new Error('SteamDB is not available.');
     const bg = (this.bg = { running: true, scope, done: 0, failed: 0, total: this.bgQueue(scope).length, next: 0, current: 0, name: '', blocked: null, abort: new AbortController(), errors: 0 });
     log.info(`SteamDB background load started: scope=${scope}, ${bg.total} games`);
     this._bgLoop(bg).catch((e) => { log.error('background loop crashed', e); bg.running = false; bg.blocked = { kind: 'errors', msg: e.message }; this.emit('state'); });
@@ -369,7 +376,7 @@ class Engine {
         bg.done++; bg.errors = 0;
       } catch (e) {
         if (signal.aborted) return finish();
-        if (e.challenge) { log.warn(`background load blocked: ${e.message}`); return finish({ kind: 'challenge', msg: e.message }); }
+        if (e.challenge || e.fatal) { log.warn(`background load blocked: ${e.message}`); return finish({ kind: e.fatal ? 'firecrawl' : 'challenge', msg: e.message }); }
         a.dbSkip = Date.now();
         bg.failed++;
         if (e.noData) bg.errors = 0;

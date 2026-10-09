@@ -281,3 +281,77 @@ test('background load writes one log line per game with name and progress', asyn
   assert.match(txt, /background load 2\/2: G2 \(2\)/);
   assert.match(txt, /next game in \d+ s/);
 });
+
+function fakeFirecrawlFetch(handler) {
+  const reqs = [];
+  const f = async (url, opts) => {
+    const body = JSON.parse(opts.body);
+    reqs.push({ url, auth: opts.headers.Authorization, body });
+    const out = handler(body);
+    return new Response(JSON.stringify(out.json), { status: out.status || 200 });
+  };
+  f.reqs = reqs;
+  return f;
+}
+const HIST = JSON.stringify({ success: true, data: { history: [{ x: Date.now() - 90 * 864e5, y: 50, d: 0 }, { x: Date.now() - 10 * 864e5, y: 25, d: 50 }] } });
+const PAGE = 'x [1/765/abc/microtrailer.mp4](https://video.fastly.steamstatic.com/store_trailers/1/765/abc/microtrailer.mp4) y https://video.fastly.steamstatic.com/store_trailers/1/765/abc/microtrailer.webm?t=5';
+
+test('Firecrawl source: sends XHR headers, parses history and finds the preview video', async () => {
+  const { Firecrawl } = require('../src/main/firecrawl');
+  const { setFetch } = require('../src/main/http');
+  const f = fakeFirecrawlFetch((b) => (b.url.includes('/api/GetPriceHistory/')
+    ? { json: { success: true, data: { rawHtml: HIST, metadata: { statusCode: 200 } } } }
+    : { json: { success: true, data: { markdown: PAGE, metadata: { statusCode: 200 } } } }));
+  setFetch(f);
+  const fc = new Firecrawl(new Throttle(() => 0), () => 'fc-test1234567');
+  const r = await fc.fetchApp(1672500, 'my');
+  assert.deepEqual([r.low, r.history.length, r.more], [2500, 2, false]);
+  assert.equal(r.gif, 'https://video.fastly.steamstatic.com/store_trailers/1/765/abc/microtrailer.webm?t=5');
+  assert.equal(f.reqs[0].auth, 'Bearer fc-test1234567');
+  assert.equal(f.reqs[0].body.headers['X-Requested-With'], 'XMLHttpRequest');
+  assert.ok(f.reqs[0].url.endsWith('/v2/scrape'));
+  setFetch((...a) => fetch(...a));
+});
+
+test('Firecrawl source: key and credit problems are fatal; HTML-wrapped JSON still parses', async () => {
+  const { Firecrawl, jsonFromBody } = require('../src/main/firecrawl');
+  const { setFetch } = require('../src/main/http');
+  const fc = new Firecrawl(new Throttle(() => 0), () => 'fc-test1234567');
+  setFetch(fakeFirecrawlFetch(() => ({ status: 401, json: { success: false, error: 'Unauthorized' } })));
+  await assert.rejects(() => fc.scrape('https://x'), (e) => e.fatal && /rejected the API key/.test(e.message));
+  setFetch(fakeFirecrawlFetch(() => ({ status: 402, json: { success: false } })));
+  await assert.rejects(() => fc.scrape('https://x'), (e) => e.fatal && /credits/.test(e.message));
+  assert.equal(await new Firecrawl(new Throttle(() => 0), () => '').scrape('https://x').catch((e) => e.fatal), true);
+  assert.deepEqual(jsonFromBody('<html><body><pre>{"a":1}</pre></body></html>'), { a: 1 });
+  assert.equal(jsonFromBody('not json'), null);
+  setFetch((...a) => fetch(...a));
+});
+
+test('engine prefers Firecrawl when enabled (short pacing) and stops cleanly on a fatal Firecrawl error', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sw-'));
+  let mode = 'ok';
+  const firecrawl = { fetchApp: async (id) => { if (mode === 'fatal') throw Object.assign(new Error('out of credits'), { fatal: true }); return dbOk(); } };
+  const steamdb = fakeDb(() => { throw new Error('browser path must not be used'); });
+  const e = new Engine({ dir, steam: fakeSteam(), steamdb, firecrawl });
+  e.setSettings({ username: 'alice', firecrawlKey: 'fc-x', useFirecrawl: true });
+  await e.sync();
+  assert.ok(e.bgDelayMs() < 20000, 'Firecrawl pacing is short');
+  e.setSettings({ useFirecrawl: false });
+  assert.ok(e.bgDelayMs() >= 60000, 'browser pacing is 1-2 minutes');
+  e.setSettings({ useFirecrawl: true });
+  e.bgDelayMs = () => 5;
+  e.listAdd(1); e.listAdd(2);
+  mode = 'fatal';
+  e.bgStart('mine');
+  await waitStopped(e);
+  assert.equal(e.bg.blocked.kind, 'firecrawl');
+  mode = 'ok';
+  e.bgStart('mine');
+  await waitStopped(e);
+  assert.equal(e.bg.done, 2);
+  assert.equal(steamdb.calls.length, 0);
+});
+
+test('log redacts Firecrawl keys', () => {
+  assert.equal(require('../src/main/log').redact('key fc-abcdef0123456789 end'), 'key fc-*** end');
+});

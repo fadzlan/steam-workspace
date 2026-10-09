@@ -8,7 +8,8 @@ const MAX = 1024 * 1024;
 
 const redact = (s) => String(s)
   .replace(/([?&](?:key|access_token|token)=)[^&\s"']+/gi, '$1***')
-  .replace(/("(?:familyToken|apiKey)"\s*:\s*")[^"]*/g, '$1***');
+  .replace(/\bfc-[A-Za-z0-9]{8,}\b/g, 'fc-***')
+  .replace(/("(?:familyToken|apiKey|firecrawlKey)"\s*:\s*")[^"]*/g, '$1***');
 
 function init(dir) {
   try {

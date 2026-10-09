@@ -8,6 +8,8 @@ const UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Geck
 let fetchImpl = (...a) => fetch(...a);
 // Main process swaps in Electron's net.fetch so system proxy settings are honoured.
 const setFetch = (f) => { fetchImpl = f; };
+// One un-retried request through the current fetch (used for POSTs to third-party APIs).
+const fetchNow = (url, opts) => fetchImpl(url, opts);
 
 async function get(throttle, url, { host, minMs, type = 'json', headers = {}, signal, retries = 4 } = {}) {
   host = host || new URL(url).host;
@@ -34,4 +36,4 @@ async function get(throttle, url, { host, minMs, type = 'json', headers = {}, si
   }
 }
 
-module.exports = { get, setFetch, UA };
+module.exports = { get, setFetch, fetchNow, UA };

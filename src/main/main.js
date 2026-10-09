@@ -7,6 +7,7 @@ const { Throttle } = require('./throttle');
 const { setFetch } = require('./http');
 const { Steam } = require('./steam');
 const { SteamDB } = require('./steamdb');
+const { Firecrawl } = require('./firecrawl');
 const { Engine } = require('./engine');
 const { Images, EXT_MIME } = require('./images');
 const log = require('./log');
@@ -24,7 +25,7 @@ function createEngine() {
   log.init(path.join(app.getPath('userData'), 'logs'));
   log.info(`Steam Workspace ${app.getVersion()} electron=${process.versions.electron} ${process.platform} ${process.arch}`);
   const throttle = new Throttle(() => (engine ? engine.settings.slowness : 1));
-  engine = new Engine({ dir, steam: new Steam(throttle), steamdb: new SteamDB(throttle), emit: (k) => send(k) });
+  engine = new Engine({ dir, steam: new Steam(throttle), steamdb: new SteamDB(throttle), firecrawl: new Firecrawl(throttle, () => engine && engine.settings.firecrawlKey), emit: (k) => send(k) });
   engine.steamdb.onStatus = (m) => win && !win.isDestroyed() && win.webContents.send('hint', m);
   images = new Images(path.join(dir, 'images'), throttle, (id) => engine.hoverUrl(id), (id) => engine.assetUrls(id), (id) => engine.peekAssets(id));
 }
@@ -85,6 +86,7 @@ function registerIpc() {
   ipcMain.handle('whys', wrap((arr) => engine.setWhys(arr)));
   ipcMain.handle('bg:start', wrap((scope) => engine.bgStart(scope)));
   ipcMain.handle('bg:stop', wrap(() => engine.bgStop()));
+  ipcMain.handle('firecrawl:test', wrap(() => engine.firecrawl.test()));
   ipcMain.handle('steamdb:fetch', wrap((id) => engine.fetchSteamDb(id)));
   ipcMain.handle('steamdb:check', wrap(() => engine.steamdb.showChallenge()));
   ipcMain.handle('steam:login', wrap(steamLogin));

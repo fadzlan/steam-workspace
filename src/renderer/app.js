@@ -297,6 +297,9 @@ async function openSettings() {
  <div class="row"><button class="btn" id="s-login">${s.hasToken ? 'Re-sign in to Steam' : 'Sign in to Steam to read family library'}</button>${s.hasToken ? '<button class="btn" id="s-logout">Sign out</button><span class="sm">signed in (token lasts ~24h)</span>' : ''}</div>
  <label>…or list family members' profiles (usernames or URLs, one per line; their game details must be public)<textarea id="s-mem">${esc(s.familyMembers)}</textarea></label>
  <label>Steam Web API key (optional, reads private-ish libraries more reliably)<input type="text" id="s-key" value="${esc(s.apiKey)}" autocomplete="off"></label>
+ <label>Firecrawl API key (optional, replaces the SteamDB browser window)<input type="text" id="s-fc" value="${esc(s.firecrawlKey || '')}" autocomplete="off" placeholder="fc-…"></label>
+ <label class="ck"><input type="checkbox" id="s-usefc"${s.useFirecrawl ? ' checked' : ''}> Use Firecrawl for SteamDB (about 2 credits per game; no browser window or Cloudflare check)</label>
+ <div class="row"><button class="btn" id="s-fctest">Test Firecrawl</button><span class="sm" id="s-fcres">Uses 1 credit.</span></div>
  <label>Slowness multiplier (1 = default pacing, 2 = twice as slow)<input type="text" id="s-slow" value="${s.slowness}"></label>
  <label>“Why buy” reasons (one per line)<textarea id="s-why">${esc(whys)}</textarea></label>
  <hr>
@@ -307,12 +310,18 @@ async function openSettings() {
     d.querySelector('#s-login').onclick = async () => { try { await api.steamLogin(); d.close('login'); } catch (e) { info('Sign-in failed', esc(e.message)); } };
     const lo = d.querySelector('#s-logout'); if (lo) lo.onclick = async () => { await api.steamLogout(); d.close('login'); };
     d.querySelector('#s-log').onclick = () => api.openLogs().catch((e) => info('Log folder', esc(e.message)));
+    d.querySelector('#s-fctest').onclick = async () => {
+      const out = d.querySelector('#s-fcres'), key = d.querySelector('#s-fc').value.trim();
+      if (!key) { out.textContent = 'Enter the API key first.'; return; }
+      out.textContent = 'Testing…';
+      try { await api.setSettings({ firecrawlKey: key }); const r = await api.firecrawlTest(); out.textContent = (r.ok ? '✓ ' : '⚠ ') + r.message; } catch (e) { out.textContent = '✗ ' + e.message; }
+    };
     d.querySelector('#s-sdb').onclick = () => api.steamdbCheck();
     d.querySelector('#s-clr').onclick = async () => { await api.cacheClear(); d.querySelector('#s-clr').textContent = 'Cleared'; };
   });
   if (r !== 'ok') return;
   const v = (id) => dlg.querySelector(id);
-  await api.setSettings({ country: v('#s-cc').value, useFamily: v('#s-fam').checked, familyMembers: v('#s-mem').value, apiKey: v('#s-key').value.trim(), slowness: v('#s-slow').value });
+  await api.setSettings({ country: v('#s-cc').value, useFamily: v('#s-fam').checked, familyMembers: v('#s-mem').value, apiKey: v('#s-key').value.trim(), firecrawlKey: v('#s-fc').value.trim(), useFirecrawl: v('#s-usefc').checked, slowness: v('#s-slow').value });
   if (SW.st.profile) await api.setWhys(v('#s-why').value.split('\n'));
 }
 
@@ -418,7 +427,7 @@ function renderBg() {
     bar.innerHTML = `<div class="pmsg"><span>SteamDB background load: ${b.done + b.failed} of ${b.total}${b.failed ? ` (${b.failed} without data)` : ''} · ${b.next ? 'next game in <b id="bgcd"></b>' : `loading ${esc(b.name)}…`}</span><button class="btn" id="bgstop">Stop</button></div><div class="pbar"><i style="width:${pct}%"></i></div>`;
   } else if (b.blocked) {
     bar.hidden = false;
-    bar.innerHTML = `<div class="pmsg"><span>SteamDB background load stopped: ${esc(b.blocked.msg)} (${b.done} loaded so far). ${b.blocked.kind === 'challenge' ? 'Open the SteamDB page, solve the check, then resume.' : ''}</span><span class="row"><button class="btn" id="bgcheck">Open SteamDB page</button><button class="btn pri" id="bgresume">Resume</button></span></div>`;
+    bar.innerHTML = `<div class="pmsg"><span>SteamDB background load stopped: ${esc(b.blocked.msg)} (${b.done} loaded so far). ${b.blocked.kind === 'challenge' ? 'Open the SteamDB page, solve the check, then resume.' : ''}</span><span class="row">${b.blocked.kind === 'firecrawl' ? '<button class="btn" id="bgsettings">Open Settings</button>' : '<button class="btn" id="bgcheck">Open SteamDB page</button>'}<button class="btn pri" id="bgresume">Resume</button></span></div>`;
   } else if ((b.done || b.failed) && bgDismissed !== key) {
     bar.hidden = false;
     bar.innerHTML = `<div class="pmsg"><span>SteamDB background load finished: ${b.done} loaded${b.failed ? `, ${b.failed} had no data` : ''}.</span><button class="btn" id="bgdismiss" data-key="${esc(key)}">Dismiss</button></div>`;
@@ -434,6 +443,7 @@ $('#bgbar').onclick = (e) => {
   if (id === 'bgstop') api.bgStop();
   else if (id === 'bgresume') { api.bgStart((SW.st.bg && SW.st.bg.scope) || $('#bgscope').value).catch((er) => info('SteamDB', esc(er.message))); }
   else if (id === 'bgcheck') api.steamdbCheck();
+  else if (id === 'bgsettings') openSettings();
   else if (id === 'bgdismiss') { bgDismissed = e.target.dataset.key; renderBg(); }
 };
 
