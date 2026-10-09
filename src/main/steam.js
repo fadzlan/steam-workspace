@@ -72,7 +72,7 @@ class Steam {
     const input = {
       ids: appids.map((appid) => ({ appid })),
       context: { language: 'english', country_code: country },
-      data_request: { include_assets: false, include_release: true, include_tag_count: 20, include_reviews: true, include_basic_info: true },
+      data_request: { include_assets: true, include_release: true, include_tag_count: 20, include_reviews: true, include_basic_info: true },
     };
     const url = `https://${API}/IStoreBrowseService/GetItems/v1?input_json=${encodeURIComponent(JSON.stringify(input))}`;
     const j = await this._json(url, signal);
@@ -104,8 +104,15 @@ function normalizeItem(it) {
     dev: names(it.basic_info && it.basic_info.developers),
     pub: names(it.basic_info && it.basic_info.publishers),
     st: soon ? 2 : free ? 1 : 0,
+    // newer apps keep images under hashed paths, so remember the real file names
+    ia: (it.assets && it.assets.asset_url_format) || '',
+    isc: (it.assets && it.assets.small_capsule) || '',
+    ih: (it.assets && it.assets.header) || '',
     at: Date.now(),
   };
 }
 
-module.exports = { Steam, normalizeItem };
+const ASSET_BASE = 'https://shared.steamstatic.com/store_item_assets/';
+const assetUrl = (a, file) => (a && a.ia && file ? ASSET_BASE + a.ia.replace('${FILENAME}', file) : null);
+
+module.exports = { Steam, normalizeItem, assetUrl };

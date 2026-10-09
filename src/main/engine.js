@@ -2,6 +2,7 @@
 const path = require('path');
 const { JsonFile } = require('./store');
 const log = require('./log');
+const { assetUrl } = require('./steam');
 
 const DAY = 864e5;
 const DEFAULT_WHYS = ['Great price', 'Wanted for a long time', 'Friends play it', 'Highly rated', 'Genre I love', 'Near historical low', 'Good for the family'];
@@ -55,6 +56,37 @@ class Engine {
       return { ...i, history: db ? db.history : null, low: db ? db.low : null, lowAt: db ? db.lowAt : null };
     });
     return out;
+  }
+
+  // Real (hashed) image URLs for an app, looked up lazily and in batches when a default URL 404s.
+  assetUrls(id) {
+    const a = this.apps[id];
+    if (a && a.isc) return Promise.resolve({ thumb: assetUrl(a, a.isc), header: assetUrl(a, a.ih) });
+    this._aq = this._aq || new Map();
+    if (!this._aq.has(id)) {
+      let resolve;
+      const promise = new Promise((r) => { resolve = r; });
+      this._aq.set(id, { promise, resolve });
+      clearTimeout(this._aqTimer);
+      this._aqTimer = setTimeout(() => this._flushAssets(), 300);
+    }
+    return this._aq.get(id).promise;
+  }
+
+  async _flushAssets() {
+    const q = this._aq; this._aq = new Map();
+    const ids = [...q.keys()];
+    for (let i = 0; i < ids.length; i += BATCH) {
+      const chunk = ids.slice(i, i + BATCH);
+      let items = [];
+      try { items = await this.steam.getItems(chunk, this.settings.country); } catch (e) { log.warn('asset lookup failed:', e.message); }
+      const got = new Map(items.filter((x) => x.id).map((x) => [x.id, x]));
+      for (const id of chunk) {
+        const it = got.get(id), a = this.apps[id];
+        if (it && !it.gone && a && it.isc) { a.ia = it.ia; a.isc = it.isc; a.ih = it.ih; this.appsF.save(); }
+        q.get(id).resolve(it && it.isc ? { thumb: assetUrl(it, it.isc), header: assetUrl(it, it.ih) } : null);
+      }
+    }
   }
 
   getDb(appid) { return (this.apps[appid] || {}).db || null; }

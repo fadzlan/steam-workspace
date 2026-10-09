@@ -109,3 +109,28 @@ test('log redacts secrets', () => {
   assert.equal(redact('GET /x?key=ABC123&steamid=1'), 'GET /x?key=***&steamid=1');
   assert.equal(redact('?access_token=eyJ.x.y'), '?access_token=***');
 });
+
+test('images fall back to hashed asset URLs when the legacy path 404s', async () => {
+  const fs = require('fs');
+  const { Images } = require('../src/main/images');
+  const { setFetch } = require('../src/main/http');
+  const { assetUrl } = require('../src/main/steam');
+  const seen = [];
+  setFetch(async (url) => {
+    seen.push(url);
+    return url.includes('store_item_assets') ? new Response(Buffer.from('jpg'), { status: 200 }) : new Response('', { status: 404 });
+  });
+  const s = fakeSteam();
+  s.getItems = async (ids) => ids.map((id) => ({ id, name: 'G' + id, ia: 'steam/apps/' + id + '/${FILENAME}?t=1', isc: 'abc/capsule_231x87.jpg', ih: 'def/header.jpg' }));
+  const e = mk(s);
+  await e.sync();
+  delete e.apps[1].isc; // pretend cached before assets were stored
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'swi-'));
+  const img = new Images(dir, new Throttle(() => 0), () => null, (id) => e.assetUrls(id));
+  const file = await img.get('thumb', 1);
+  assert.ok(file && fs.existsSync(file));
+  assert.ok(seen.some((u) => u.startsWith('https://shared.steamstatic.com/store_item_assets/steam/apps/1/abc/capsule_231x87.jpg')));
+  assert.equal(assetUrl({ ia: 'x/${FILENAME}', }, 'y.jpg'), 'https://shared.steamstatic.com/store_item_assets/x/y.jpg');
+  assert.equal(await img.get('thumb', 1), file, 'second call is served from disk');
+  setFetch((...a) => fetch(...a));
+});

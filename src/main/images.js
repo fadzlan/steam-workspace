@@ -8,11 +8,13 @@ const EXT_MIME = { '.jpg': 'image/jpeg', '.png': 'image/png', '.gif': 'image/gif
 
 // On-disk image cache. Files are fetched lazily, one at a time, the first time the UI asks.
 class Images {
-  constructor(dir, throttle, resolveHover) {
+  constructor(dir, throttle, resolveHover, resolveAssets) {
     this.dir = dir;
     this.t = throttle;
     this.resolveHover = resolveHover; // (appid) => url | null
+    this.resolveAssets = resolveAssets || (async () => null); // (appid) => {thumb, header} | null
     this.inflight = new Map();
+    this.failed = new Map(); // key -> time of last failure, to avoid hammering 404s
   }
 
   _candidates(kind, id) {
@@ -42,6 +44,7 @@ class Images {
     const hit = this._existing(kind, id);
     if (hit) return hit;
     const key = kind + id;
+    if (Date.now() - (this.failed.get(key) || 0) < 10 * 60 * 1000) return null;
     if (!this.inflight.has(key)) {
       const p = this._download(kind, id).finally(() => this.inflight.delete(key));
       this.inflight.set(key, p);
@@ -49,20 +52,29 @@ class Images {
     return this.inflight.get(key);
   }
 
-  async _download(kind, id) {
-    for (const url of this._candidates(kind, id)) {
-      try {
-        const buf = await get(this.t, url, { host: CDN, minMs: 300, type: 'buffer', retries: 2 });
-        const ext = (path.extname(new URL(url).pathname) || '.jpg').toLowerCase();
-        const dir = path.join(this.dir, kind);
-        fs.mkdirSync(dir, { recursive: true });
-        const file = path.join(dir, id + ext);
-        fs.writeFileSync(file, buf);
-        return file;
-      } catch (_) {
-        /* try next candidate */
-      }
+  async _try(url, kind, id) {
+    try {
+      const buf = await get(this.t, url, { host: new URL(url).host, minMs: 300, type: 'buffer', retries: 2 });
+      const ext = (path.extname(new URL(url).pathname) || '.jpg').toLowerCase();
+      const dir = path.join(this.dir, kind);
+      fs.mkdirSync(dir, { recursive: true });
+      const file = path.join(dir, id + ext);
+      fs.writeFileSync(file, buf);
+      return file;
+    } catch (_) {
+      return null;
     }
+  }
+
+  async _download(kind, id) {
+    const urls = this._candidates(kind, id);
+    for (const url of urls) { const f = await this._try(url, kind, id); if (f) return f; }
+    if (kind === 'thumb' || kind === 'header') {
+      // newer apps use hashed asset paths; ask the store API for the real ones
+      const a = await this.resolveAssets(Number(id)).catch(() => null);
+      if (a) for (const url of [kind === 'thumb' ? a.thumb : null, a.header]) { if (url) { const f = await this._try(url, kind, id); if (f) return f; } }
+    }
+    this.failed.set(kind + id, Date.now());
     return null;
   }
 
