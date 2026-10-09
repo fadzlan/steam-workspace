@@ -1,68 +1,86 @@
 'use strict';
 const { BrowserWindow } = require('electron');
 const { sleep } = require('./throttle');
+const { parseHistory, findGif, CHALLENGE_TITLE } = require('./steamdb-parse');
+const log = require('./log');
 
-// steamdb.info sits behind Cloudflare, so plain HTTP gets a 403. We load pages in a
-// real (hidden) Chromium window with a persistent session instead. If Cloudflare shows
-// a challenge, `showChallenge()` opens the window so the user can solve it once; the
-// cookie then persists for later (still slow, still sparse) requests.
+// steamdb.info sits behind Cloudflare, so plain HTTP gets a 403. Pages are loaded in a real
+// Chromium window with a persistent session. When Cloudflare shows a check, that window is
+// brought to the front so the user can solve it; once it clears the window hides again and the
+// cookie is reused for later (still slow, still sparse) requests.
 const PART = 'persist:steamdb';
 const HOST = 'steamdb.info';
 const GAP = 9000;
+const CHALLENGE_WAIT_MS = Number(process.env.SW_CHALLENGE_WAIT_MS) || 3 * 60 * 1000;
 
 class SteamDB {
   constructor(throttle) {
     this.t = throttle;
     this.win = null;
+    this.onStatus = () => {}; // (message|null) => void, for UI hints
   }
 
-  _window(show = false) {
+  _window() {
     if (this.win && !this.win.isDestroyed()) return this.win;
-    this.win = new BrowserWindow({ width: 900, height: 700, show, title: 'SteamDB – solve the check if shown', webPreferences: { partition: PART, sandbox: true } });
+    this.win = new BrowserWindow({ width: 560, height: 720, show: false, title: 'SteamDB check', autoHideMenuBar: true, webPreferences: { partition: PART, sandbox: true } });
+    this.win.on('page-title-updated', (e) => e.preventDefault());
     return this.win;
   }
 
-  async _load(url, signal) {
-    return this.t.run(HOST, GAP, async () => {
-      const w = this._window();
-      await w.loadURL(url).catch(() => {});
-      for (let i = 0; i < 20; i++) {
-        const title = w.webContents.getTitle();
-        if (!/just a moment|attention required/i.test(title)) break;
-        if (i === 19) throw Object.assign(new Error('SteamDB is showing a Cloudflare check.'), { challenge: true });
-        await sleep(1000);
-      }
-      return w.webContents;
-    }, signal);
+  async _blocked(wc) {
+    if (CHALLENGE_TITLE.test(wc.getTitle())) return true;
+    try { return await wc.executeJavaScript(`!!document.querySelector('#challenge-form, #challenge-running, .cf-turnstile, [name="cf-turnstile-response"]')`); } catch (_) { return false; }
   }
 
+  // Load a URL; if Cloudflare intervenes, show the window and wait for the user to finish the check.
+  async _open(url, signal) {
+    const w = this._window();
+    await w.loadURL(url).catch(() => {});
+    let shown = false;
+    const t0 = Date.now();
+    while (await this._blocked(w.webContents)) {
+      if (signal && signal.aborted) throw new Error('cancelled');
+      if (!shown) {
+        shown = true;
+        log.info('SteamDB shows a Cloudflare check; asking the user to solve it');
+        this.onStatus('SteamDB wants a human check. Solve it in the SteamDB window that just opened.');
+        w.setTitle('SteamDB check: solve it, this window closes by itself');
+        w.show(); w.focus();
+      }
+      if (w.isDestroyed()) throw Object.assign(new Error('SteamDB check window was closed.'), { challenge: true });
+      if (Date.now() - t0 > CHALLENGE_WAIT_MS) {
+        w.hide();
+        throw Object.assign(new Error('SteamDB check was not completed in time.'), { challenge: true });
+      }
+      await sleep(1000);
+    }
+    if (shown) { log.info('SteamDB check solved'); if (!w.isDestroyed()) w.hide(); }
+    this.onStatus(null);
+    return w.webContents;
+  }
+
+  // Open the window for the user to pass the check ahead of time (Settings button).
   showChallenge() {
-    const w = this._window(true);
-    w.show();
+    const w = this._window();
+    w.setTitle('SteamDB check: solve it if shown, then close this window');
+    w.show(); w.focus();
     w.loadURL(`https://${HOST}/`).catch(() => {});
   }
 
-  // Price history for a store app. Returns {history:[[ms, cents]], low, lowAt} or null.
-  async priceHistory(appid, cc, signal) {
-    const wc = await this._load(`https://${HOST}/api/GetPriceHistory/?appid=${appid}&cc=${cc}`, signal);
-    const txt = await wc.executeJavaScript('document.body.innerText');
-    let j;
-    try { j = JSON.parse(txt); } catch (_) { return null; }
-    const d = (j && j.data) || {};
-    const raw = d.final || d.history || (Array.isArray(d) ? d : null);
-    if (!Array.isArray(raw) || !raw.length) return null;
-    const history = raw.map((p) => [Number(p[0]), Math.round(Number(p[1]) * (d.final ? 100 : 1))]).filter((p) => p[0] && p[1] >= 0);
-    let low = history[0];
-    for (const p of history) if (p[1] < low[1]) low = p;
-    return { history, low: low[1], lowAt: low[0] };
-  }
-
-  // The animated hover preview shown on SteamDB lists; best-effort page scrape.
-  async hoverGif(appid, signal) {
-    const wc = await this._load(`https://${HOST}/app/${appid}/`, signal);
-    const html = await wc.executeJavaScript('document.documentElement.outerHTML');
-    const urls = [...html.matchAll(/https?:\/\/[^"'\s)]+\.(?:gif|webp)(?:\?[^"'\s)]*)?/gi)].map((m) => m[0]);
-    return urls.find((u) => /hover|animated/i.test(u)) || urls[0] || null;
+  // One page load per game: price history (fetched from inside the page so cookies apply) + hover preview.
+  fetchApp(appid, cc, signal) {
+    return this.t.run(HOST, GAP, async () => {
+      const wc = await this._open(`https://${HOST}/app/${appid}/`, signal);
+      const html = await wc.executeJavaScript('document.documentElement.outerHTML');
+      const gif = findGif(html);
+      let hist = null;
+      try {
+        const txt = await wc.executeJavaScript(`fetch('/api/GetPriceHistory/?appid=${Number(appid)}&cc=${encodeURIComponent(cc)}', { credentials: 'include', headers: { 'x-requested-with': 'XMLHttpRequest' } }).then((r) => r.text())`);
+        hist = parseHistory(JSON.parse(txt));
+      } catch (e) { log.warn(`SteamDB history for ${appid}: ${e.message}`); }
+      log.info(`SteamDB ${appid}: history=${hist ? hist.history.length + ' points' : 'none'} gif=${gif ? 'yes' : 'no'}`);
+      return { history: hist ? hist.history : null, low: hist ? hist.low : null, lowAt: hist ? hist.lowAt : null, gif };
+    }, signal);
   }
 }
 

@@ -20,6 +20,7 @@
   };
   api.onState(reload);
   api.onProgress(onProgress);
+  api.onHint((m) => { $('#hint').hidden = !m; $('#hint').textContent = m || ''; });
   await reload();
   const h = location.hash.slice(1);
   show(['list', 'mine', 'bub', 'pd', 'cov'].includes(h) ? h : 'list');

@@ -76,7 +76,15 @@ Steam is always preferred; SteamDB is queried only for history and the animated 
 
 ### SteamDB and Cloudflare
 
-SteamDB blocks plain HTTP clients, so pages are loaded in a hidden Chromium window with a persistent session. If SteamDB shows a Cloudflare check, open **Settings → Open SteamDB check**, solve it once, and sync again. Scraping SteamDB is best-effort: the price-history JSON and hover-preview URL formats are not an official API and may change. If they do, the rest of the app keeps working.
+SteamDB blocks plain HTTP clients, so each game's page is loaded once in a real Chromium window with a persistent session
+(price history is read from inside that page, so it needs only one SteamDB request per game).
+
+When SteamDB shows a Cloudflare / human check, the app opens that window in front of you and shows a banner. Complete the
+check; the window then closes by itself and the load continues (it waits up to 3 minutes). The Cloudflare cookie is kept, so
+you should only see it occasionally. *Settings → Open SteamDB check* opens the same window if you want to pass the check ahead of time.
+
+Scraping SteamDB is best-effort: the price-history JSON and hover-preview URL are not an official API and may change. If they do,
+the app tells you and the rest keeps working; the details are in the log.
 
 ## Develop
 

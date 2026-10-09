@@ -254,7 +254,7 @@ document.addEventListener('click', (e) => {
   if (st) { const id = +st.dataset.star; (SW.listIds.has(id) ? api.listRemove(id) : api.listAdd(id)).catch((er) => info('Error', esc(er.message))); return; }
   const rm = t.closest('[data-rm]'); if (rm) { api.listRemove(+rm.dataset.rm); return; }
   const db = t.closest('[data-db]');
-  if (db) { db.disabled = true; db.textContent = 'Loading… (slow)'; api.steamdbFetch(+db.dataset.db).catch((er) => { info('SteamDB', esc(er.message) + (er.message.includes('Cloudflare') ? '<br>Use Settings → “Open SteamDB check”.' : '')); db.disabled = false; db.textContent = 'Load from SteamDB'; }); return; }
+  if (db) { db.disabled = true; db.textContent = 'Loading… (a SteamDB window may open)'; api.steamdbFetch(+db.dataset.db).catch((er) => { info('SteamDB', esc(er.message) + (er.message.includes('Cloudflare') ? '<br>Use Settings → “Open SteamDB check”.' : '')); db.disabled = false; db.textContent = 'Load from SteamDB'; }); return; }
   const a = t.closest('a[data-open]'); if (a) { e.preventDefault(); api.open(a.href); }
 });
 document.addEventListener('change', async (e) => {

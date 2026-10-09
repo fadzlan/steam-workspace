@@ -134,3 +134,12 @@ test('images fall back to hashed asset URLs when the legacy path 404s', async ()
   assert.equal(await img.get('thumb', 1), file, 'second call is served from disk');
   setFetch((...a) => fetch(...a));
 });
+
+test('SteamDB parsing helpers', () => {
+  const { parseHistory, findGif, CHALLENGE_TITLE } = require('../src/main/steamdb-parse');
+  const h = parseHistory({ success: true, data: { final: [[1000, 12.5], [2000, 6.25], [3000, 12.5]] } });
+  assert.deepEqual([h.low, h.lowAt, h.history.length, h.history[0][1]], [625, 2000, 3, 1250]);
+  assert.equal(parseHistory({ data: {} }), null);
+  assert.equal(findGif('<img src="https://x/a.gif"><img src="https://x/hover.gif?t=1">'), 'https://x/hover.gif?t=1');
+  assert.ok(CHALLENGE_TITLE.test('Just a moment...') && !CHALLENGE_TITLE.test('Quake 4 · SteamDB'));
+});

@@ -25,6 +25,7 @@ function createEngine() {
   log.info(`Steam Workspace ${app.getVersion()} electron=${process.versions.electron} ${process.platform} ${process.arch}`);
   const throttle = new Throttle(() => (engine ? engine.settings.slowness : 1));
   engine = new Engine({ dir, steam: new Steam(throttle), steamdb: new SteamDB(throttle), emit: (k) => send(k) });
+  engine.steamdb.onStatus = (m) => win && !win.isDestroyed() && win.webContents.send('hint', m);
   images = new Images(path.join(dir, 'images'), throttle, (id) => engine.hoverUrl(id), (id) => engine.assetUrls(id));
 }
 

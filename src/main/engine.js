@@ -276,9 +276,9 @@ class Engine {
   async fetchSteamDb(appid, signal) {
     const a = this.apps[appid];
     if (!a) throw new Error('Unknown game');
-    const h = await this.steamdb.priceHistory(appid, this.settings.country.toLowerCase(), signal);
-    const gif = await this.steamdb.hoverGif(appid, signal).catch(() => null);
-    a.db = { history: h ? h.history : null, low: h ? h.low : null, lowAt: h ? h.lowAt : null, gif, at: Date.now() };
+    const r = await this.steamdb.fetchApp(appid, this.settings.country.toLowerCase(), signal);
+    if (!r.history && !r.gif) throw new Error('SteamDB returned no history or preview for this game (the page layout may have changed, see the log).');
+    a.db = { ...r, at: Date.now() };
     this.appsF.save();
     this.emit('state');
     return a.db;

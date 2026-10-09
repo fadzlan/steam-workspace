@@ -25,5 +25,6 @@ contextBridge.exposeInMainWorld('api', {
   cacheClear: () => call('cache:clear'),
   open: (url) => call('open', url),
   onState: (fn) => ipcRenderer.on('state', () => fn()),
+  onHint: (fn) => ipcRenderer.on('hint', (_e, m) => fn(m)),
   onProgress: (fn) => ipcRenderer.on('progress', (_e, s) => fn(s)),
 });
