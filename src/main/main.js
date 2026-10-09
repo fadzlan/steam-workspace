@@ -104,7 +104,7 @@ app.whenReady().then(() => {
   registerImageProtocol();
   registerIpc();
   win = new BrowserWindow({
-    width: 1500, height: 940, backgroundColor: '#14181f', title: 'Steam Workspace',
+    width: 1500, height: 940, backgroundColor: '#14181f', title: 'Steam Workspace', icon: path.join(__dirname, '..', '..', 'resources', 'icon.png'),
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true },
   });
   win.setMenuBarVisibility(false);

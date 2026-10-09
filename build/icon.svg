@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#232b38"/>
+      <stop offset="1" stop-color="#10151b"/>
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="1024" rx="224" fill="url(#bg)"/>
+  <g stroke="#14181f" stroke-width="14">
+    <circle cx="420" cy="590" r="240" fill="#e8883a"/>
+    <circle cx="700" cy="360" r="170" fill="#5b9bdc"/>
+    <circle cx="730" cy="730" r="120" fill="#55b571"/>
+    <circle cx="250" cy="260" r="105" fill="#a07fd6"/>
+    <circle cx="520" cy="175" r="68" fill="#d9b73c"/>
+  </g>
+  <!-- wishlist star -->
+  <polygon fill="#10151b" points="420,460 450.6,542.7 538.8,546.3 469.7,601.4 493.1,686.3 420,637.8 346.9,686.3 370.3,601.4 301.2,546.3 389.4,542.7"/>
+</svg>
