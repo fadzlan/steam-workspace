@@ -39,15 +39,17 @@ class Engine {
     const owned = new Set(u.owned || []);
     const fam = new Set(s.excludeFamily ? u.family || [] : []);
     let hiddenOwned = 0, hiddenFamily = 0, pending = 0, unavailable = 0;
+    const gone = [];
     for (const w of u.wishlist) {
       if (owned.has(w.appid)) { hiddenOwned++; continue; }
       if (fam.has(w.appid)) { hiddenFamily++; continue; }
       const a = this.apps[w.appid];
-      if (a && a.gone) { unavailable++; continue; } // Steam returns nothing: delisted, removed or region-locked
+      if (a && a.gone) { unavailable++; gone.push({ id: w.appid, name: a.name || '', added: w.added }); continue; } // Steam returns nothing: delisted, removed or region-locked
       if (!a || !a.name) { pending++; continue; }
       out.games.push({ ...a, added: w.added, db: undefined, hasDb: !!a.db, gif: !!(a.db && a.db.gif) });
     }
     out.profile = { steamid: u.steamid, name: u.name, ownedKnown: u.owned != null, familyKnown: u.family != null, familyAt: u.familyAt || 0, syncedAt: u.syncedAt || 0 };
+    out.unavailable = gone;
     out.counts = { wishlist: u.wishlist.length, hiddenOwned, hiddenFamily, pending, unavailable };
     out.whys = u.whys || DEFAULT_WHYS;
     out.list = u.list.map((i) => {
@@ -247,7 +249,7 @@ class Engine {
         if (!it.id) continue;
         seen.add(it.id);
         const prev = this.apps[it.id];
-        this.apps[it.id] = { ...(prev && prev.db ? { db: prev.db } : {}), ...it };
+        this.apps[it.id] = it.gone && prev && prev.name ? { ...prev, gone: true, at: it.at || Date.now() } : { ...(prev && prev.db ? { db: prev.db } : {}), ...it };
       }
       for (const id of chunk) if (!seen.has(id) && !this.apps[id]) this.apps[id] = { id, gone: true, at: Date.now() };
       done += chunk.length;

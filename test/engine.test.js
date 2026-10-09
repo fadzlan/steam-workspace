@@ -95,6 +95,7 @@ test('games Steam no longer returns are "unavailable", not pending, and retried 
   const c = e.getState().counts;
   assert.equal(c.pending, 0);
   assert.equal(c.unavailable, 1);
+  assert.deepEqual(e.getState().unavailable.map((g) => g.id), [4]);
   const n = s.calls.length;
   await new Promise((r) => setTimeout(r, 5));
   await e.sync('prices');
