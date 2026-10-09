@@ -86,7 +86,7 @@ document.addEventListener('mouseout', (e) => {
 });
 
 // ---- wishlist table --------------------------------------------------------------------
-const COLS = [['', ''], ['name', 'Game'], ['disc', 'Discount', 'num'], ['fin', 'Price', 'num'], ['rp', 'Rating', 'num'], ['rel', 'Release'], ['dev', 'Developer / publisher']];
+const COLS = [['', ''], ['name', 'Game'], ['disc', 'Discount', 'num'], ['fin', 'Price', 'num'], ['saved', 'Saved', 'num'], ['rp', 'Rating', 'num'], ['rel', 'Release'], ['dev', 'Developer / publisher']];
 $('#thead').innerHTML = COLS.map((c) => `<th data-k="${c[0]}" class="${c[2] || ''}">${c[1]}<span class="ar"></span></th>`).join('');
 $('#thead').onclick = (e) => {
   const th = e.target.closest('th'); if (!th || !th.dataset.k) return;
@@ -97,6 +97,7 @@ $('#thead').onclick = (e) => {
 function cmp(a, b) {
   const k = S.sort; let x = a[k], y = b[k];
   if (k === 'fin') { x = a.st === 1 ? 0 : a.fin || 1e9; y = b.st === 1 ? 0 : b.fin || 1e9; }
+  if (k === 'saved') { x = a.disc > 0 ? a.orig - a.fin : 0; y = b.disc > 0 ? b.orig - b.fin : 0; }
   if (k === 'rp') { x = a.rc ? a.rp + a.rc / 1e9 : -1; y = b.rc ? b.rp + b.rc / 1e9 : -1; }
   if (k === 'rel') { x = x || (S.dir > 0 ? 1e12 : 0); y = y || (S.dir > 0 ? 1e12 : 0); }
   const r = typeof x === 'string' ? x.localeCompare(y) : x - y;
@@ -108,7 +109,7 @@ function chip(g, t, i) {
 }
 function priceCell(g) {
   if (g.st === 2 && !g.fin) return '<span class="sm">Coming soon</span>';
-  if (g.st === 1 || (!g.fin && !g.orig)) return g.st === 1 ? '<span class="sm">Free / n.a.</span>' : '—';
+  if (g.st === 1 || (!g.fin && !g.orig)) return g.st === 1 ? '<span class="sm">Free</span>' : '—';
   return (g.disc > 0 ? `<span class="old">${esc(g.fOrig)}</span>` : '') + esc(g.fFin);
 }
 const ratingCell = (g) => g.rc
@@ -120,7 +121,7 @@ const gameCell = (g, extra = '') => `<div class="gm"><div class="th">${thumb(g)}
 
 function rowHtml(g) {
   return `<tr><td style="width:34px">${starBtn(g)}</td><td>${gameCell(g, `<div class="tags">${g.tags.map((t, i) => chip(g, t, i)).join('')}</div>`)}</td>
- <td class="num">${g.disc > 0 ? `<span class="disc">-${g.disc}%</span>` : '<span class="sm">—</span>'}</td><td class="num">${priceCell(g)}</td><td class="num">${ratingCell(g)}</td>
+ <td class="num">${g.disc > 0 ? `<span class="disc">-${g.disc}%</span>` : '<span class="sm">—</span>'}</td><td class="num">${priceCell(g)}</td><td class="num">${g.disc > 0 && g.orig > g.fin ? `<span class="saved">${price(g.orig - g.fin)}</span>` : '<span class="sm">—</span>'}</td><td class="num">${ratingCell(g)}</td>
  <td class="dv" style="white-space:nowrap">${g.st === 2 && !g.rel ? '<span class="sm">TBA</span>' : dstr(g.rel)}</td>
  <td class="dv">${esc(g.dev || '—')}${g.pub && g.pub !== g.dev ? `<div class="sm">${esc(g.pub)}</div>` : ''}</td></tr>`;
 }
@@ -135,7 +136,7 @@ function renderList() {
   cur = SW.games.filter((g) => pass(g)).sort(cmp);
   const pages = Math.max(1, Math.ceil(cur.length / PS)); if (S.page >= pages) S.page = pages - 1;
   const sl = cur.slice(S.page * PS, S.page * PS + PS);
-  $('#tb').innerHTML = sl.length ? sl.map(rowHtml).join('') : `<tr><td colspan="7" class="empty">${emptyMsg()}</td></tr>`;
+  $('#tb').innerHTML = sl.length ? sl.map(rowHtml).join('') : `<tr><td colspan="8" class="empty">${emptyMsg()}</td></tr>`;
   $('#pinfo').textContent = `${cur.length.toLocaleString()} of ${SW.games.length.toLocaleString()} games · page ${S.page + 1}/${pages}`;
   $('#prev').disabled = S.page === 0; $('#next').disabled = S.page >= pages - 1;
   document.querySelectorAll('#thead th').forEach((th) => { const on = th.dataset.k === S.sort; th.classList.toggle('s', on); th.querySelector('.ar').textContent = on ? (S.dir > 0 ? '▲' : '▼') : ''; });
@@ -167,6 +168,18 @@ function syncSeg() {
   for (const [id, key] of [['#mode', 'mode'], ['#scope', 'scope'], ['#bscope', 'scope'], ['#bsrc', 'bsrc'], ['#psrc', 'psrc'], ['#csrc', 'csrc'], ['#mtags', 'mtags']])
     document.querySelectorAll(id + ' button').forEach((b) => b.setAttribute('aria-pressed', b.dataset.v === S[key]));
 }
+
+// ---- collapsible tag filter ----------------------------------------------------------------------------
+function applyTagsPanel() {
+  const off = pref('tagsoff', '') === '1';
+  $('#v-list .layout').classList.toggle('tagsoff', off);
+  const b = $('#tagtoggle');
+  b.textContent = off ? '»' : '«';
+  b.title = off ? 'Show tag filter' : 'Hide tag filter';
+  b.setAttribute('aria-expanded', String(!off));
+}
+$('#tagtoggle').onclick = () => { setPref('tagsoff', pref('tagsoff', '') === '1' ? '' : '1'); applyTagsPanel(); };
+applyTagsPanel();
 
 // ---- my list ---------------------------------------------------------------------------
 const MCOLS = ['', 'Game', 'Why buy it', 'Price now', 'Price history<br>(SteamDB)', 'Note', ''];

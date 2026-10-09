@@ -41,7 +41,8 @@
 <div class="layout">
  <aside class="side">
   <div class="panel" style="display:flex;flex-direction:column;min-height:0">
-   <h3>Filter by tag</h3>
+   <div class="phead"><h3>Filter by tag</h3><button class="btn" id="tagtoggle" aria-expanded="true" title="Hide tag filter">«</button></div>
+   <div class="pbody">
    <input type="search" id="tq" placeholder="Search tags…" aria-label="Search tags">
    <div class="cats" id="cats" style="margin-top:8px"></div>
    <div class="row" style="margin-top:8px">
@@ -49,6 +50,7 @@
     <div class="seg" id="scope"><button data-v="all" aria-pressed="true">All tags</button><button data-v="shown" aria-pressed="false">Shown only</button></div>
    </div>
    <div class="taglist" id="taglist"></div>
+   </div>
   </div>
  </aside>
  <div style="min-width:0">
