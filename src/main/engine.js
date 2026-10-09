@@ -362,6 +362,7 @@ class Engine {
       if (!queue.length) { log.info(`SteamDB background load finished: ${bg.done} loaded, ${bg.failed} without data`); return finish(); }
       const id = queue[0], a = this.apps[id];
       Object.assign(bg, { current: id, name: a.name, total: bg.done + bg.failed + queue.length, next: 0 });
+      log.info(`SteamDB background load ${bg.done + bg.failed + 1}/${bg.total}: ${a.name} (${id})`);
       this.emit('state');
       try {
         await this.fetchSteamDb(id, signal);
@@ -379,6 +380,7 @@ class Engine {
       if (!this.bgQueue(bg.scope).length) continue; // loop top reports completion
       const delay = this.bgDelayMs();
       bg.next = Date.now() + delay;
+      log.info(`SteamDB background load: next game in ${Math.round(delay / 1000)} s`);
       this.emit('state');
       await new Promise((resolve) => { const t = setTimeout(resolve, delay); signal.addEventListener('abort', () => { clearTimeout(t); resolve(); }, { once: true }); });
     }

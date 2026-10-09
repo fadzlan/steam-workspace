@@ -266,3 +266,18 @@ test('images use already-known hashed URLs first and cope with games that only h
   assert.ok(seen[0].includes('/def/header.jpg'));
   setFetch((...a) => fetch(...a));
 });
+
+test('background load writes one log line per game with name and progress', async () => {
+  const fs = require('fs');
+  const log = require('../src/main/log');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'swlog-'));
+  log.init(dir);
+  const e = await bgEngine(dbOk);
+  e.listAdd(1); e.listAdd(2);
+  e.bgStart('mine');
+  await waitStopped(e);
+  const txt = fs.readFileSync(path.join(dir, 'app.log'), 'utf8');
+  assert.match(txt, /background load 1\/2: G1 \(1\)/);
+  assert.match(txt, /background load 2\/2: G2 \(2\)/);
+  assert.match(txt, /next game in \d+ s/);
+});
