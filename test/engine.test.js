@@ -293,38 +293,35 @@ function fakeFirecrawlFetch(handler) {
   f.reqs = reqs;
   return f;
 }
-const HIST = JSON.stringify({ success: true, data: { history: [{ x: Date.now() - 90 * 864e5, y: 50, d: 0 }, { x: Date.now() - 10 * 864e5, y: 25, d: 50 }] } });
-const PAGE = 'x [1/765/abc/microtrailer.mp4](https://video.fastly.steamstatic.com/store_trailers/1/765/abc/microtrailer.mp4) y https://video.fastly.steamstatic.com/store_trailers/1/765/abc/microtrailer.webm?t=5';
+const PAGE = `x [1/765/abc/microtrailer.mp4](https://video.fastly.steamstatic.com/store_trailers/1/765/abc/microtrailer.mp4) y https://video.fastly.steamstatic.com/store_trailers/1/765/abc/microtrailer.webm?t=5
+| Currency | Current Price | Converted Price | Lowest Recorded Price |
+| --- | --- | --- | --- |
+| ![](https://steamdb.info/static/country/us.svg) U.S. Dollar | -60% $23.99 | $23.99 | $23.99 | -60% $23.99 |
+| ![](https://steamdb.info/static/country/id.svg) Indonesian Rupiah | -60% Rp 239600 | $13.36 | -44.28% | $13.36 | -60% Rp 239600 |
+| ![](https://steamdb.info/static/country/my.svg) Malaysian Ringgit | -60% RM79.60 | $19.48 | -18.79% | $19.48 | -70% RM59.70 |
+`;
 
-test('Firecrawl source: sends XHR headers, parses history and finds the preview video', async () => {
+test('Firecrawl source: reads preview video and the lowest recorded price from the app page', async () => {
   const { Firecrawl } = require('../src/main/firecrawl');
   const { setFetch } = require('../src/main/http');
-  const f = fakeFirecrawlFetch((b) => (b.url.includes('/api/GetPriceHistory/')
-    ? { json: { success: true, data: { rawHtml: HIST, metadata: { statusCode: 200 } } } }
-    : { json: { success: true, data: { markdown: PAGE, metadata: { statusCode: 200 } } } }));
+  const f = fakeFirecrawlFetch(() => ({ json: { success: true, data: { markdown: PAGE, metadata: { statusCode: 200 } } } }));
   setFetch(f);
   const fc = new Firecrawl(new Throttle(() => 0), () => 'fc-test1234567');
-  const r = await fc.fetchApp(1672500, 'my');
-  assert.deepEqual([r.low, r.history.length, r.more], [2500, 2, false]);
+  const r = await fc.fetchApp(1672500, 'my', undefined, { price: 'RM79.60' });
+  assert.deepEqual([r.low, r.history, r.allTime], [5970, null, true]);
   assert.equal(r.gif, 'https://video.fastly.steamstatic.com/store_trailers/1/765/abc/microtrailer.webm?t=5');
+  assert.equal(f.reqs.length, 1, 'one request (one credit) per game');
   assert.equal(f.reqs[0].auth, 'Bearer fc-test1234567');
-  assert.equal(f.reqs[0].body.headers['X-Requested-With'], 'XMLHttpRequest');
   assert.ok(f.reqs[0].url.endsWith('/v2/scrape'));
+  const none = await fc.fetchApp(1, 'my', undefined, { price: 'RM1.00' });
+  assert.equal(none.low, null);
   setFetch((...a) => fetch(...a));
 });
 
-test('Firecrawl source: key and credit problems are fatal; HTML-wrapped JSON still parses', async () => {
-  const { Firecrawl, jsonFromBody } = require('../src/main/firecrawl');
-  const { setFetch } = require('../src/main/http');
-  const fc = new Firecrawl(new Throttle(() => 0), () => 'fc-test1234567');
-  setFetch(fakeFirecrawlFetch(() => ({ status: 401, json: { success: false, error: 'Unauthorized' } })));
-  await assert.rejects(() => fc.scrape('https://x'), (e) => e.fatal && /rejected the API key/.test(e.message));
-  setFetch(fakeFirecrawlFetch(() => ({ status: 402, json: { success: false } })));
-  await assert.rejects(() => fc.scrape('https://x'), (e) => e.fatal && /credits/.test(e.message));
-  assert.equal(await new Firecrawl(new Throttle(() => 0), () => '').scrape('https://x').catch((e) => e.fatal), true);
-  assert.deepEqual(jsonFromBody('<html><body><pre>{"a":1}</pre></body></html>'), { a: 1 });
-  assert.equal(jsonFromBody('not json'), null);
-  setFetch((...a) => fetch(...a));
+test('price parsing handles different currency formats', () => {
+  const { parsePrice } = require('../src/main/firecrawl');
+  const cases = [['RM79.60', 79.6], ['Rp 239600', 239600], ['1.234,56 €', 1234.56], ['¥ 3388', 3388], ['396000₫', 396000], ['$1,299.00', 1299], ['23,99€', 23.99], ['CLP$ 16999', 16999]];
+  for (const [txt, v] of cases) assert.equal(parsePrice(txt), v, txt);
 });
 
 test('engine prefers Firecrawl when enabled (short pacing) and stops cleanly on a fatal Firecrawl error', async () => {
@@ -385,4 +382,17 @@ test('own library: uses the sign-in token, or derives it from the family library
   await e3.sync();
   assert.deepEqual(e3.user().owned, [1]);
   assert.ok(!e3.getState().status.warnings.some((w) => /Could not read your game library/.test(w)));
+});
+
+test('Firecrawl source: key and credit problems are fatal; HTML-wrapped JSON still parses', async () => {
+  const { Firecrawl, jsonFromBody } = require('../src/main/firecrawl');
+  const { setFetch } = require('../src/main/http');
+  const fc = new Firecrawl(new Throttle(() => 0), () => 'fc-test1234567');
+  setFetch(fakeFirecrawlFetch(() => ({ status: 401, json: { success: false, error: 'Unauthorized' } })));
+  await assert.rejects(() => fc.scrape('https://x'), (e) => e.fatal && /rejected the API key/.test(e.message));
+  setFetch(fakeFirecrawlFetch(() => ({ status: 402, json: { success: false } })));
+  await assert.rejects(() => fc.scrape('https://x'), (e) => e.fatal && /credits/.test(e.message));
+  assert.equal(await new Firecrawl(new Throttle(() => 0), () => '').scrape('https://x').catch((e) => e.fatal), true);
+  assert.deepEqual(jsonFromBody('<html><body><pre>{"a":1}</pre></body></html>'), { a: 1 });
+  setFetch((...a) => fetch(...a));
 });

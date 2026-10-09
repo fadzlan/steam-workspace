@@ -66,7 +66,7 @@ class Engine {
     out.list = u.list.map((i) => {
       const a = this.apps[i.appid] || {};
       const db = a.db || null;
-      return { ...i, history: db ? db.history : null, low: db ? db.low : null, lowAt: db ? db.lowAt : null, more: !!(db && db.more), dbAt: db ? db.at : 0, saleEnd: db ? db.saleEnd || 0 : 0 };
+      return { ...i, history: db ? db.history : null, low: db ? db.low : null, lowAt: db ? db.lowAt : null, more: !!(db && db.more), allTime: !!(db && db.allTime), dbAt: db ? db.at : 0, saleEnd: db ? db.saleEnd || 0 : 0 };
     });
     return out;
   }
@@ -330,8 +330,9 @@ class Engine {
     if (!a) throw new Error('Unknown game');
     const src = this._useFirecrawl() ? this.firecrawl : this.steamdb;
     if (!src) throw new Error('SteamDB is not available.');
-    const r = await src.fetchApp(appid, this.settings.country.toLowerCase(), signal);
-    if (!r.history && !r.gif) throw Object.assign(new Error('SteamDB returned no price history or preview for this game (see the log for what it sent).'), { noData: true });
+    const r = await src.fetchApp(appid, this.settings.country.toLowerCase(), signal, { price: a.fFin, fin: a.fin });
+    if (r.low != null && a.fin > 0) r.low = Math.min(r.low, a.fin); // an all-time low cannot be above today's price
+    if (!r.history && !r.gif && r.low == null) throw Object.assign(new Error('SteamDB returned no price history or preview for this game (see the log for what it sent).'), { noData: true });
     a.db = { ...r, at: Date.now(), saleEnd: a.end || 0 }; // saleEnd: the sale this data was fetched during (to know when it is stale)
     this.appsF.save();
     this.emit('state');

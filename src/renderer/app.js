@@ -242,8 +242,10 @@ const mineCols = () => MINE_COLS.filter((c) => colOn('mine', c));
 function histCell(g, i) {
   // the SteamDB data was fetched during a sale that has since ended: it no longer reflects the price
   const stale = i.saleEnd && Date.now() / 1000 > i.saleEnd && (i.dbAt || 0) / 1000 < i.saleEnd;
-  if (!i.history) return `<button class="btn" data-db="${g.id}">Load from SteamDB</button>`;
-  return `${spark(i.history)}<div class="sm">${i.more ? '2-year low' : 'Low'} ${price(i.low)}${g.fin && g.fin <= i.low ? ' <b style="color:var(--good)">at low</b>' : ''}<br>${new Date(i.lowAt).toISOString().slice(0, 10)}</div>` +
+  if (!i.history && i.low == null) return `<button class="btn" data-db="${g.id}">Load from SteamDB</button>`;
+  const label = i.allTime ? 'Lowest ever' : i.more ? '2-year low' : 'Low';
+  const date = i.lowAt ? `<br>${new Date(i.lowAt).toISOString().slice(0, 10)}` : '';
+  return `${spark(i.history)}<div class="sm">${label} ${price(i.low)}${g.fin && g.fin <= i.low ? ' <b style="color:var(--good)">at low</b>' : ''}${date}</div>` +
     (stale ? `<button class="btn warn" data-db="${g.id}" title="The sale this data was fetched during has ended, so it is out of date">Sale ended · update</button>`
            : `<button class="btn tiny" data-db="${g.id}" title="Refresh from SteamDB${i.dbAt ? ' (last fetched ' + new Date(i.dbAt).toLocaleString() + ')' : ''}">↻ refresh</button>`);
 }
@@ -308,7 +310,7 @@ async function openSettings() {
  <label>…or list family members' profiles (usernames or URLs, one per line; their game details must be public)<textarea id="s-mem">${esc(s.familyMembers)}</textarea></label>
  <label>Steam Web API key (optional: an alternative to signing in for reading your library; free at steamcommunity.com/dev/apikey)<input type="text" id="s-key" value="${esc(s.apiKey)}" autocomplete="off"></label>
  <label>Firecrawl API key (optional, replaces the SteamDB browser window)<input type="text" id="s-fc" value="${esc(s.firecrawlKey || '')}" autocomplete="off" placeholder="fc-…"></label>
- <label class="ck"><input type="checkbox" id="s-usefc"${s.useFirecrawl ? ' checked' : ''}> Use Firecrawl for SteamDB (about 2 credits per game; no browser window or Cloudflare check)</label>
+ <label class="ck"><input type="checkbox" id="s-usefc"${s.useFirecrawl ? ' checked' : ''}> Use Firecrawl for SteamDB (1 credit per game; no browser window or Cloudflare check; gives the lowest price ever + preview, no price graph)</label>
  <div class="row"><button class="btn" id="s-fctest">Test Firecrawl</button><span class="sm" id="s-fcres">Uses 1 credit.</span></div>
  <label>Slowness multiplier (1 = default pacing, 2 = twice as slow)<input type="text" id="s-slow" value="${s.slowness}"></label>
  <label>“Why buy” reasons (one per line)<textarea id="s-why">${esc(whys)}</textarea></label>

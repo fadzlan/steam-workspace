@@ -83,12 +83,12 @@ Press **Sync**. Family-owned games then show a 👪 badge with the owner names, 
 ### SteamDB through Firecrawl (optional)
 
 If you have a [Firecrawl](https://firecrawl.dev) API key, put it in *Settings → Firecrawl API key*, tick **Use Firecrawl for SteamDB** and press **Test Firecrawl** (1 credit).
-SteamDB pages are then fetched by Firecrawl instead of the browser window, so there is **no Cloudflare check on your machine**:
+SteamDB pages are then fetched by Firecrawl instead of the browser window, so there is **no Cloudflare check on your machine**.
 
-- about **2 credits per game**: one request for SteamDB's price-history JSON (sent with the headers SteamDB's own page uses), one for the app page that lists the preview video;
-- the background loader then waits only 8-15 seconds between games instead of 1-2 minutes;
-- if Firecrawl rejects the key or runs out of credits, the background load stops, the banner says why and offers **Open Settings** and **Resume**;
-- history is read anonymously, so it covers about 2 years (the cell says *2-year low* when it looks cut off).
+- **1 credit per game**: it reads the game's SteamDB app page, which lists the **lowest price ever recorded** in every currency (matched to your store country by today's Steam price) and the preview video link.
+- **No price graph:** SteamDB's price-history endpoint rejects Firecrawl's requests (HTTP 406), so Firecrawl loads show *Lowest ever RMxx* with no sparkline or date. Use the browser source for the graph.
+- The background loader waits only 8-15 seconds between games instead of 1-2 minutes.
+- If Firecrawl rejects the key or runs out of credits, the background load stops, the banner says why and offers **Open Settings** and **Resume**.
 
 The key is stored in plain text in the app's `settings.json` (like the Steam API key) and is scrubbed from the log. Clear the checkbox to go back to the browser window.
 
