@@ -182,7 +182,7 @@ $('#tagtoggle').onclick = () => { setPref('tagsoff', pref('tagsoff', '') === '1'
 applyTagsPanel();
 
 // ---- my list ---------------------------------------------------------------------------
-const MCOLS = ['', 'Game', 'Why buy it', 'Price now', 'Price history<br>(SteamDB)', 'Note', ''];
+const MCOLS = ['', 'Game', 'Why buy it', 'Price now', 'Saved', 'Price history<br>(SteamDB)', 'Note', ''];
 $('#mhead').innerHTML = MCOLS.map((c) => `<th style="cursor:default">${c}</th>`).join('');
 function spark(h, low) {
   if (!h || h.length < 2) return '';
@@ -208,7 +208,7 @@ function renderMine() {
   let total = 0;
   $('#mb').innerHTML = rows.map((i) => {
     const g = SW.byId.get(i.appid);
-    if (!g) return `<tr><td></td><td>App ${i.appid} <span class="sm">(details pending)</span></td><td colspan="4"></td><td><button class="btn" data-rm="${i.appid}">Remove</button></td></tr>`;
+    if (!g) return `<tr><td></td><td>App ${i.appid} <span class="sm">(details pending)</span></td><td colspan="5"></td><td><button class="btn" data-rm="${i.appid}">Remove</button></td></tr>`;
     total += g.fin || 0;
     const hist = i.history
       ? `${spark(i.history)}<div class="sm">${i.more ? '2-year low' : 'Low'} ${price(i.low)}${g.fin && g.fin <= i.low ? ' <b style="color:var(--good)">at low</b>' : ''}<br>${new Date(i.lowAt).toISOString().slice(0, 10)}</div>`
@@ -217,9 +217,10 @@ function renderMine() {
     return `<tr><td style="width:34px">${starBtn(g)}</td><td>${gameCell(g)}<div class="tags mtags">${tags}</div></td>
  <td style="min-width:170px"><select class="why" data-why="${g.id}">${whyOptions(i.why)}</select></td>
  <td class="num">${g.disc > 0 ? `<span class="disc">-${g.disc}%</span> ` : ''}${priceCell(g)}</td>
+ <td class="num">${g.disc > 0 && g.orig > g.fin ? `<span class="saved">${price(g.orig - g.fin)}</span>` : '<span class="sm">—</span>'}</td>
  <td>${hist}</td><td><textarea class="note" rows="4" data-note="${g.id}" placeholder="Note…">${esc(i.note || '')}</textarea></td>
  <td><button class="btn" data-rm="${g.id}">Remove</button></td></tr>`;
-  }).join('') || `<tr><td colspan="7" class="empty">${items.length ? 'No games with this reason.' : 'Your list is empty. Click ☆ next to a game on the Wishlist tab.'}</td></tr>`;
+  }).join('') || `<tr><td colspan="8" class="empty">${items.length ? 'No games with this reason.' : 'Your list is empty. Click ☆ next to a game on the Wishlist tab.'}</td></tr>`;
   $('#mtotal').textContent = rows.length ? `${rows.length} game${rows.length > 1 ? 's' : ''} · total ${price(total)}` : '';
 }
 
