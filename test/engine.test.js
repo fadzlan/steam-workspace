@@ -17,7 +17,7 @@ function fakeSteam({ owned = [], wishlist = [1, 2, 3, 4] } = {}) {
     getTagList: async () => ({ 19: 'Action', 21: 'Adventure' }),
     getOwned: async (id) => (id.endsWith('2') ? [3] : owned),
     getFamilyLibrary: async () => null,
-    getItems: async (ids) => { calls.push(ids); return ids.map((id) => ({ id, name: 'G' + id, tagids: [19], disc: 10, orig: 1000, fin: 900, st: 0, at: Date.now() })); },
+    getItems: async (ids) => { calls.push(ids); return ids.map((id) => ({ id, name: 'G' + id, tagids: [19], disc: 10, orig: 1000, fin: 900, st: 0, at: Date.now(), mt: '' })); },
   };
 }
 const mk = (steam, settings = {}) => {
@@ -527,4 +527,19 @@ test('range responses for the cache protocol', () => {
   r = serveBuffer(buf, 'video/webm', 'bytes=0-999');
   assert.equal(r.headers['content-range'], 'bytes 0-9/10');
   assert.equal(serveBuffer(buf, 'video/webm', 'bytes=50-60').status, 416);
+});
+
+test('games saved before preview addresses existed are refreshed once, even if recently fetched', async () => {
+  const s = fakeSteam();
+  const e = mk(s);
+  await e.sync();
+  assert.equal(s.calls.length, 1);
+  await e.sync();
+  assert.equal(s.calls.length, 1, 'fresh data with a (possibly empty) preview field is not refetched');
+  for (const id of [1, 2, 3, 4]) delete e.apps[id].mt; // what an older cache looks like
+  s.getItems = async (ids) => { s.calls.push(ids); return ids.map((id) => ({ id, name: 'G' + id, tagids: [], disc: 0, orig: 1, fin: 1, st: 0, at: Date.now(), mt: '' })); };
+  await e.sync();
+  assert.equal(s.calls.length, 2, 'refetched once');
+  await e.sync();
+  assert.equal(s.calls.length, 2, 'and not again (mt is now defined)');
 });
