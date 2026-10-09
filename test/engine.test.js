@@ -99,6 +99,12 @@ test('throttle spaces requests per host', async () => {
   assert.ok(stamps[1] - stamps[0] >= 45 && stamps[2] - stamps[1] >= 45);
 });
 
+test('sale end date comes from active_discounts', () => {
+  const n = normalizeItem({ success: 1, appid: 5, name: 'X', best_purchase_option: { discount_pct: 30, final_price_in_cents: '700', original_price_in_cents: '1000', active_discounts: [{ discount_end_date: 1792688400 }] } });
+  assert.equal(n.end, 1792688400);
+  assert.equal(normalizeItem({ success: 1, appid: 6, name: 'Y', best_purchase_option: { discount_pct: 0, active_discounts: [{ discount_end_date: 5 }] } }).end, 0);
+});
+
 test('normalizeItem maps store response', () => {
   const n = normalizeItem({ success: 1, appid: 5, name: 'X', type: 0, tags: [{ tagid: 1 }], best_purchase_option: { discount_pct: 50, original_price_in_cents: '2000', final_price_in_cents: '1000', formatted_final_price: 'RM10' }, reviews: { summary_filtered: { percent_positive: 90, review_count: 12 } }, release: { is_coming_soon: true } });
   assert.deepEqual([n.id, n.disc, n.orig, n.fin, n.rp, n.rc, n.st, n.tagids], [5, 50, 2000, 1000, 90, 12, 2, [1]]);
@@ -156,9 +162,15 @@ test('images fall back to hashed asset URLs when the legacy path 404s', async ()
 });
 
 test('SteamDB parsing helpers', () => {
-  const { parseHistory, microtrailerUrl, CHALLENGE_TITLE } = require('../src/main/steamdb-parse');
+  const { parseHistory, saleStart, microtrailerUrl, CHALLENGE_TITLE } = require('../src/main/steamdb-parse');
   const h = parseHistory({ success: true, data: { history: [{ x: 1000, y: 12.5, d: 0, f: 'RM12.50' }, { x: 2000, y: 6.25, d: 50 }, { x: 3000, y: 0 }, { x: 4000, y: 12.5 }] } });
   assert.deepEqual([h.low, h.lowAt, h.history.length, h.history[0][1]], [625, 2000, 3, 1250]);
+  assert.equal(h.history[1][2], 50);
+  // sale start: trailing run of discounted points (with and without the discount column)
+  assert.equal(saleStart([[1, 1000, 0], [2, 800, 20], [3, 600, 40]]), 2);
+  assert.equal(saleStart([[1, 1000, 0], [2, 1000, 0]]), null);
+  assert.equal(saleStart([[1, 1000], [2, 800], [3, 600]]), 2);
+  assert.equal(saleStart([[1, 1000], [2, 1000]]), null);
   assert.equal(parseHistory({ success: false, error: 'x' }), null);
   assert.equal(parseHistory({ success: true, data: { history: [] } }), null);
   const mt = JSON.stringify({ video: { 'video/mp4': 'a/movie.mp4', 'video/webm': 'a/movie.webm' }, time: 77 });

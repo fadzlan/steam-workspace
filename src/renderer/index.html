@@ -63,6 +63,7 @@
    <select id="ffam" aria-label="Family library" hidden></select>
    <select id="fl" aria-label="List"><option value="all">All games</option><option value="in">In my list</option><option value="out">Not in my list</option></select>
    <button class="btn" id="reset">Reset</button>
+   <details class="colmenu" id="colmenu-list"><summary class="btn">Columns</summary><div class="menu"></div></details>
   </div>
   <div class="tblwrap"><table><thead><tr id="thead"></tr></thead><tbody id="tb"></tbody></table></div>
   <div class="pager"><span class="sm" id="pinfo"></span><span class="row"><button class="btn" id="prev">← Prev</button><button class="btn" id="next">Next →</button></span></div>
@@ -76,6 +77,7 @@
   <div class="seg" id="mtags" title="Which tags to show under each game"><button data-v="shown" aria-pressed="true">Shown tags</button><button data-v="all" aria-pressed="false">All tags</button></div>
   <span class="sm" id="mtotal"></span>
   <span class="grow"></span>
+  <details class="colmenu" id="colmenu-mine"><summary class="btn">Columns</summary><div class="menu"></div></details>
   <button class="btn pri" id="bought" title="Re-sync, then drop games you now own from the wishlist and this list">I bought some games · refresh</button>
  </div>
  <div class="tblwrap"><table class="mine" style="min-width:1100px"><thead><tr id="mhead"></tr></thead><tbody id="mb"></tbody></table></div>

@@ -86,17 +86,53 @@ document.addEventListener('mouseout', (e) => {
 });
 
 // ---- wishlist table --------------------------------------------------------------------
-const COLS = [['', ''], ['name', 'Game'], ['disc', 'Discount', 'num'], ['fin', 'Price', 'num'], ['saved', 'Saved', 'num'], ['rp', 'Rating', 'num'], ['rel', 'Release'], ['dev', 'Developer / publisher']];
-$('#thead').innerHTML = COLS.map((c) => `<th data-k="${c[0]}" class="${c[2] || ''}">${c[1]}<span class="ar"></span></th>`).join('');
+// ---- toggleable columns -------------------------------------------------------------------------------
+const rel = (ms) => { // "in 12 days" / "8 days ago"
+  const d = ms - Date.now(), a = Math.abs(d), m = 6e4, h = 36e5, day = 864e5;
+  const t = a < h ? `${Math.max(1, Math.round(a / m))} min` : a < 2 * day ? `${Math.round(a / h)} hours` : `${Math.round(a / day)} days`;
+  return d >= 0 ? `in ${t}` : `${t} ago`;
+};
+const endCell = (g) => (g.disc > 0 && g.end ? `<span title="${new Date(g.end * 1000).toLocaleString()}"${g.end * 1000 < Date.now() ? ' class="sm"' : ''}>${g.end * 1000 < Date.now() ? 'ended ' : ''}${rel(g.end * 1000)}</span>` : '<span class="sm">—</span>');
+const startedCell = (g) => (g.started ? `<span title="${new Date(g.started).toLocaleString()}">${rel(g.started)}</span>` : '<span class="sm">—</span>');
+const savedCell = (g) => (g.disc > 0 && g.orig > g.fin ? `<span class="saved">${price(g.orig - g.fin)}</span>` : '<span class="sm">—</span>');
+
+// id, header, td class, sort key, cell(g, listItem), hidden by default
+const LIST_COLS = [
+  { id: 'disc', h: 'Discount', cls: 'num', sort: 'disc', cell: (g) => (g.disc > 0 ? `<span class="disc">-${g.disc}%</span>` : '<span class="sm">—</span>') },
+  { id: 'fin', h: 'Price', cls: 'num', sort: 'fin', cell: (g) => priceCell(g) },
+  { id: 'saved', h: 'Saved', cls: 'num', sort: 'saved', cell: savedCell },
+  { id: 'ends', h: 'Sale ends', cls: 'dv', sort: 'end', cell: endCell },
+  { id: 'started', h: 'Sale started', cls: 'dv', sort: 'started', cell: startedCell, off: true, note: 'needs SteamDB data (games in My list)' },
+  { id: 'rp', h: 'Rating', cls: 'num', sort: 'rp', cell: (g) => ratingCell(g) },
+  { id: 'rel', h: 'Release', cls: 'dv', sort: 'rel', cell: (g) => (g.st === 2 && !g.rel ? '<span class="sm">TBA</span>' : dstr(g.rel)) },
+  { id: 'dev', h: 'Developer / publisher', cls: 'dv', sort: 'dev', cell: (g) => `${esc(g.dev || '—')}${g.pub && g.pub !== g.dev ? `<div class="sm">${esc(g.pub)}</div>` : ''}` },
+];
+const colOn = (table, c) => { const hidden = pref('cols-' + table, null); return hidden === null ? !c.off : !hidden.split(',').includes(c.id); };
+function colMenu(table, defs, rerender) {
+  const det = $('#colmenu-' + table);
+  det.querySelector('.menu').innerHTML = defs.map((c) => `<label class="ck"><input type="checkbox" data-col="${c.id}"${colOn(table, c) ? ' checked' : ''}> ${c.h.replace(/<br>/g, ' ')}${c.note ? ` <span class="sm">(${c.note})</span>` : ''}</label>`).join('');
+  det.querySelector('.menu').onchange = (e) => {
+    const hidden = defs.filter((c) => !det.querySelector(`[data-col="${c.id}"]`).checked).map((c) => c.id);
+    setPref('cols-' + table, hidden.join(',') || '-'); // '-' = nothing hidden (an empty value would mean "no choice yet")
+    rerender();
+  };
+}
+document.addEventListener('click', (e) => document.querySelectorAll('details.colmenu[open]').forEach((d) => { if (!d.contains(e.target)) d.open = false; }));
+const listCols = () => LIST_COLS.filter((c) => colOn('list', c));
+function renderHead() {
+  $('#thead').innerHTML = '<th data-k=""></th><th data-k="name">Game<span class="ar"></span></th>' + listCols().map((c) => `<th data-k="${c.sort}" class="${c.cls === 'num' ? 'num' : ''}">${c.h}<span class="ar"></span></th>`).join('');
+}
 $('#thead').onclick = (e) => {
   const th = e.target.closest('th'); if (!th || !th.dataset.k) return;
   const k = th.dataset.k;
-  if (S.sort === k) S.dir *= -1; else { S.sort = k; S.dir = k === 'name' || k === 'dev' || k === 'fin' ? 1 : -1; }
+  if (S.sort === k) S.dir *= -1; else { S.sort = k; S.dir = k === 'name' || k === 'dev' || k === 'fin' || k === 'end' ? 1 : -1; }
   S.page = 0; renderList();
 };
 function cmp(a, b) {
   const k = S.sort; let x = a[k], y = b[k];
   if (k === 'fin') { x = a.st === 1 ? 0 : a.fin || 1e9; y = b.st === 1 ? 0 : b.fin || 1e9; }
+  if (k === 'end') { x = a.disc > 0 && a.end ? a.end : (S.dir > 0 ? 1e12 : 0); y = b.disc > 0 && b.end ? b.end : (S.dir > 0 ? 1e12 : 0); }
+  if (k === 'started') { x = a.started || 0; y = b.started || 0; }
   if (k === 'saved') { x = a.disc > 0 ? a.orig - a.fin : 0; y = b.disc > 0 ? b.orig - b.fin : 0; }
   if (k === 'rp') { x = a.rc ? a.rp + a.rc / 1e9 : -1; y = b.rc ? b.rp + b.rc / 1e9 : -1; }
   if (k === 'rel') { x = x || (S.dir > 0 ? 1e12 : 0); y = y || (S.dir > 0 ? 1e12 : 0); }
@@ -119,11 +155,9 @@ const starBtn = (g) => `<button class="star${SW.listIds.has(g.id) ? ' on' : ''}"
 const famBadge = (g) => (g.fam && g.fam.length ? `<span class="famb" title="Owned in your Steam Family library">👪 ${esc(famNames(g).join(', '))}</span>` : '');
 const gameCell = (g, extra = '') => `<div class="gm"><div class="th">${thumb(g)}</div><div class="gn"><a href="https://store.steampowered.com/app/${g.id}" data-open>${esc(g.name)}</a>${g.type === 4 ? '<span class="badge" style="width:max-content;margin:0">DLC</span>' : ''}${famBadge(g)}${extra}</div></div>`;
 
-function rowHtml(g) {
-  return `<tr><td style="width:34px">${starBtn(g)}</td><td>${gameCell(g, `<div class="tags">${g.tags.map((t, i) => chip(g, t, i)).join('')}</div>`)}</td>
- <td class="num">${g.disc > 0 ? `<span class="disc">-${g.disc}%</span>` : '<span class="sm">—</span>'}</td><td class="num">${priceCell(g)}</td><td class="num">${g.disc > 0 && g.orig > g.fin ? `<span class="saved">${price(g.orig - g.fin)}</span>` : '<span class="sm">—</span>'}</td><td class="num">${ratingCell(g)}</td>
- <td class="dv" style="white-space:nowrap">${g.st === 2 && !g.rel ? '<span class="sm">TBA</span>' : dstr(g.rel)}</td>
- <td class="dv">${esc(g.dev || '—')}${g.pub && g.pub !== g.dev ? `<div class="sm">${esc(g.pub)}</div>` : ''}</td></tr>`;
+function rowHtml(g, cols) {
+  return `<tr><td style="width:34px">${starBtn(g)}</td><td>${gameCell(g, `<div class="tags">${g.tags.map((t, i) => chip(g, t, i)).join('')}</div>`)}</td>` +
+    cols.map((c) => `<td class="${c.cls}"${c.id === 'rel' ? ' style="white-space:nowrap"' : ''}>${c.cell(g)}</td>`).join('') + '</tr>';
 }
 function emptyMsg() {
   const st = SW.st;
@@ -136,7 +170,9 @@ function renderList() {
   cur = SW.games.filter((g) => pass(g)).sort(cmp);
   const pages = Math.max(1, Math.ceil(cur.length / PS)); if (S.page >= pages) S.page = pages - 1;
   const sl = cur.slice(S.page * PS, S.page * PS + PS);
-  $('#tb').innerHTML = sl.length ? sl.map(rowHtml).join('') : `<tr><td colspan="8" class="empty">${emptyMsg()}</td></tr>`;
+  const cols = listCols();
+  renderHead();
+  $('#tb').innerHTML = sl.length ? sl.map((g) => rowHtml(g, cols)).join('') : `<tr><td colspan="${cols.length + 2}" class="empty">${emptyMsg()}</td></tr>`;
   $('#pinfo').textContent = `${cur.length.toLocaleString()} of ${SW.games.length.toLocaleString()} games · page ${S.page + 1}/${pages}`;
   $('#prev').disabled = S.page === 0; $('#next').disabled = S.page >= pages - 1;
   document.querySelectorAll('#thead th').forEach((th) => { const on = th.dataset.k === S.sort; th.classList.toggle('s', on); th.querySelector('.ar').textContent = on ? (S.dir > 0 ? '▲' : '▼') : ''; });
@@ -182,8 +218,7 @@ $('#tagtoggle').onclick = () => { setPref('tagsoff', pref('tagsoff', '') === '1'
 applyTagsPanel();
 
 // ---- my list ---------------------------------------------------------------------------
-const MCOLS = ['', 'Game', 'Why buy it', 'Price now', 'Saved', 'Price history<br>(SteamDB)', 'Note', ''];
-$('#mhead').innerHTML = MCOLS.map((c) => `<th style="cursor:default">${c}</th>`).join('');
+// (header/cells for My list are built in renderMine from MINE_COLS below)
 function spark(h, low) {
   if (!h || h.length < 2) return '';
   const W = 110, H = 28, t0 = h[0][0], t1 = Date.now(), mx = Math.max(...h.map((p) => p[1])) || 1;
@@ -198,6 +233,24 @@ function whyOptions(sel) {
   if (sel && !ws.includes(sel)) ws.push(sel);
   return `<option value="">— why? —</option>` + ws.map((w) => `<option${w === sel ? ' selected' : ''}>${esc(w)}</option>`).join('') + '<option value="__new">＋ New reason…</option>';
 }
+const MINE_COLS = [
+  { id: 'why', h: 'Why buy it', cls: 'c-why', cell: (g, i) => `<select class="why" data-why="${g.id}">${whyOptions(i.why)}</select>` },
+  { id: 'price', h: 'Price now', cls: 'num', cell: (g) => `${g.disc > 0 ? `<span class="disc">-${g.disc}%</span> ` : ''}${priceCell(g)}` },
+  { id: 'saved', h: 'Saved', cls: 'num', cell: savedCell },
+  { id: 'ends', h: 'Sale ends', cls: 'dv', cell: endCell },
+  { id: 'started', h: 'Sale started', cls: 'dv', cell: (g, i) => startedCell({ started: i.started }) },
+  { id: 'hist', h: 'Price history<br>(SteamDB)', cls: 'c-hist', cell: (g, i) => histCell(g, i) },
+  { id: 'note', h: 'Note', cls: 'c-note', cell: (g, i) => `<textarea class="note" rows="4" data-note="${g.id}" placeholder="Note…">${esc(i.note || '')}</textarea>` },
+];
+const mineCols = () => MINE_COLS.filter((c) => colOn('mine', c));
+function histCell(g, i) {
+  // the SteamDB data was fetched during a sale that has since ended: it no longer reflects the price
+  const stale = i.saleEnd && Date.now() / 1000 > i.saleEnd && (i.dbAt || 0) / 1000 < i.saleEnd;
+  if (!i.history) return `<button class="btn" data-db="${g.id}">Load from SteamDB</button>`;
+  return `${spark(i.history)}<div class="sm">${i.more ? '2-year low' : 'Low'} ${price(i.low)}${g.fin && g.fin <= i.low ? ' <b style="color:var(--good)">at low</b>' : ''}<br>${new Date(i.lowAt).toISOString().slice(0, 10)}</div>` +
+    (stale ? `<button class="btn warn" data-db="${g.id}" title="The sale this data was fetched during has ended, so it is out of date">Sale ended · update</button>`
+           : `<button class="btn tiny" data-db="${g.id}" title="Refresh from SteamDB${i.dbAt ? ' (last fetched ' + new Date(i.dbAt).toLocaleString() + ')' : ''}">↻ refresh</button>`);
+}
 function renderMine() {
   const items = SW.st.list;
   $('#mycount').textContent = items.length;
@@ -205,24 +258,21 @@ function renderMine() {
   f.innerHTML = '<option value="__all">All reasons</option><option value="__none">No reason yet</option>' + SW.st.whys.map((w) => `<option>${esc(w)}</option>`).join('');
   f.value = [...f.options].some((o) => o.value === prev) ? prev : '__all';
   const rows = items.filter((i) => f.value === '__all' || (f.value === '__none' ? !i.why : i.why === f.value));
+  const cols = mineCols();
+  $('#mhead').innerHTML = '<th></th><th>Game</th>' + cols.map((c) => `<th class="${c.cls}" style="cursor:default">${c.h}</th>`).join('') + '<th></th>';
   let total = 0;
   $('#mb').innerHTML = rows.map((i) => {
     const g = SW.byId.get(i.appid);
-    if (!g) return `<tr><td></td><td>App ${i.appid} <span class="sm">(details pending)</span></td><td colspan="5"></td><td><button class="btn" data-rm="${i.appid}">Remove</button></td></tr>`;
+    if (!g) return `<tr><td></td><td>App ${i.appid} <span class="sm">(details pending)</span></td><td colspan="${cols.length}"></td><td><button class="btn" data-rm="${i.appid}">Remove</button></td></tr>`;
     total += g.fin || 0;
-    const hist = i.history
-      ? `${spark(i.history)}<div class="sm">${i.more ? '2-year low' : 'Low'} ${price(i.low)}${g.fin && g.fin <= i.low ? ' <b style="color:var(--good)">at low</b>' : ''}<br>${new Date(i.lowAt).toISOString().slice(0, 10)}</div>`
-      : `<button class="btn" data-db="${g.id}">Load from SteamDB</button>`;
-    const tags = g.tags.map((t, i) => [t, i]).filter(([, i]) => S.mtags === 'all' || i < 5).map(([t, i]) => chip(g, t, i)).join('');
-    return `<tr><td style="width:34px">${starBtn(g)}</td><td>${gameCell(g)}<div class="tags mtags">${tags}</div></td>
- <td style="min-width:170px"><select class="why" data-why="${g.id}">${whyOptions(i.why)}</select></td>
- <td class="num">${g.disc > 0 ? `<span class="disc">-${g.disc}%</span> ` : ''}${priceCell(g)}</td>
- <td class="num">${g.disc > 0 && g.orig > g.fin ? `<span class="saved">${price(g.orig - g.fin)}</span>` : '<span class="sm">—</span>'}</td>
- <td>${hist}</td><td><textarea class="note" rows="4" data-note="${g.id}" placeholder="Note…">${esc(i.note || '')}</textarea></td>
- <td><button class="btn" data-rm="${g.id}">Remove</button></td></tr>`;
-  }).join('') || `<tr><td colspan="8" class="empty">${items.length ? 'No games with this reason.' : 'Your list is empty. Click ☆ next to a game on the Wishlist tab.'}</td></tr>`;
+    const tags = g.tags.map((t, k) => [t, k]).filter(([, k]) => S.mtags === 'all' || k < 5).map(([t, k]) => chip(g, t, k)).join('');
+    return `<tr><td style="width:34px">${starBtn(g)}</td><td>${gameCell(g)}<div class="tags mtags">${tags}</div></td>` +
+      cols.map((c) => `<td class="${c.cls}">${c.cell(g, i)}</td>`).join('') + `<td><button class="btn" data-rm="${g.id}">Remove</button></td></tr>`;
+  }).join('') || `<tr><td colspan="${cols.length + 3}" class="empty">${items.length ? 'No games with this reason.' : 'Your list is empty. Click ☆ next to a game on the Wishlist tab.'}</td></tr>`;
   $('#mtotal').textContent = rows.length ? `${rows.length} game${rows.length > 1 ? 's' : ''} · total ${price(total)}` : '';
 }
+colMenu('list', LIST_COLS, () => renderList());
+colMenu('mine', MINE_COLS, () => renderMine());
 
 // ---- dialogs -----------------------------------------------------------------------------
 const dlg = $('#dlg');

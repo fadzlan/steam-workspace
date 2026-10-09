@@ -3,12 +3,12 @@
 // Formats are taken from SteamDB's own front-end code (app.js / hover.js).
 
 // GET /api/GetPriceHistory/?appid=&cc=  ->  {success, data:{history:[{x: ms, y: price, d: discount %, f: "RM70.60"}]}}
-// Returns {history:[[ms, cents]], low, lowAt}. y is in currency units; points with no price (y = 0) are dropped.
+// Returns {history:[[ms, cents, discount%]], low, lowAt}. y is in currency units; points with no price (y = 0) are dropped.
 function parseHistory(j) {
   const raw = j && j.success !== false && j.data && Array.isArray(j.data.history) ? j.data.history : null;
   if (!raw) return null;
   const history = raw
-    .map((p) => (Array.isArray(p) ? [Number(p[0]), Math.round(Number(p[1]) * 100)] : [Number(p.x), Math.round(Number(p.y) * 100)]))
+    .map((p) => (Array.isArray(p) ? [Number(p[0]), Math.round(Number(p[1]) * 100)] : [Number(p.x), Math.round(Number(p.y) * 100), Number(p.d) || 0]))
     .filter((p) => p[0] > 0 && p[1] > 0);
   if (!history.length) return null;
   let low = history[0];
@@ -28,6 +28,22 @@ function microtrailerUrl(videoCdn, json) {
   return `${videoCdn}store_trailers/${path}${m.time ? `?t=${m.time}` : ''}`;
 }
 
+// When the current sale started (ms), from history points [ms, cents, discount%?]. Walks back over the
+// trailing run of discounted points; old cached data without the discount falls back to the last price drop.
+function saleStart(history) {
+  if (!Array.isArray(history) || history.length < 2) return null;
+  const last = history.length - 1;
+  if (history[last][2] !== undefined) {
+    if (!(history[last][2] > 0)) return null;
+    let i = last;
+    while (i > 0 && history[i - 1][2] > 0) i--;
+    return history[i][0];
+  }
+  let i = last;
+  while (i > 0 && history[i - 1][1] > history[i][1]) i--;
+  return i < last ? history[i + 1][0] : null;
+}
+
 const CHALLENGE_TITLE = /just a moment|attention required|checking your browser|verify you are human/i;
 
-module.exports = { parseHistory, microtrailerUrl, CHALLENGE_TITLE };
+module.exports = { parseHistory, saleStart, microtrailerUrl, CHALLENGE_TITLE };

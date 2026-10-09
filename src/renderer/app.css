@@ -45,8 +45,8 @@ svg.spark{display:block}
 
 .hdr-actions select{width:auto}
 table.mine th{white-space:normal;line-height:1.25;vertical-align:bottom}
-table.mine th:nth-child(6){width:140px}
-table.mine th:nth-child(7){width:30%}
+table.mine th.c-hist{width:140px}
+table.mine th.c-note{width:30%}
 table.mine textarea.note{width:100%;min-height:86px;resize:vertical;background:var(--bg);color:var(--fg);border:1px solid var(--bd);border-radius:4px;padding:7px 9px;font:inherit}
 .mtags{margin-top:8px}
 .mtags .tg{cursor:default}
@@ -70,3 +70,11 @@ table.mine textarea.note{width:100%;min-height:86px;resize:vertical;background:v
 .layout.tagsoff .phead{margin:0;justify-content:center}
 @media(max-width:900px){.layout.tagsoff{grid-template-columns:minmax(0,1fr)}}
 .saved{color:var(--good);font-weight:600}
+
+details.colmenu{position:relative}
+details.colmenu>summary{list-style:none;cursor:pointer}
+details.colmenu>summary::-webkit-details-marker{display:none}
+details.colmenu .menu{position:absolute;right:0;top:calc(100% + 4px);z-index:20;min-width:230px;background:var(--panel);border:1px solid var(--bd);border-radius:6px;padding:8px 10px;display:flex;flex-direction:column;gap:6px;box-shadow:0 6px 18px #0005}
+details.colmenu label.ck{display:flex;gap:8px;align-items:center;font-size:13px;cursor:pointer}
+.btn.tiny{padding:1px 6px;font-size:11px;margin-top:4px}
+.btn.warn{margin-top:4px;border-color:var(--mixed);color:var(--mixed)}

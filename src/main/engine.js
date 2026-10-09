@@ -3,6 +3,7 @@ const path = require('path');
 const { JsonFile } = require('./store');
 const log = require('./log');
 const { assetUrl } = require('./steam');
+const { saleStart } = require('./steamdb-parse');
 
 const DAY = 864e5;
 const DEFAULT_WHYS = ['Great price', 'Wanted for a long time', 'Friends play it', 'Highly rated', 'Genre I love', 'Near historical low', 'Good for the family'];
@@ -50,7 +51,7 @@ class Engine {
       if (!a || !a.name) { pending++; continue; }
       const fam = famOwners[w.appid] || (famLegacy.has(w.appid) ? ['?'] : []); // steamids of family members who own it
       if (fam.length) familyOwned++;
-      out.games.push({ ...a, added: w.added, db: undefined, hasDb: !!a.db, gif: !!(a.db && a.db.gif), fam });
+      out.games.push({ ...a, added: w.added, db: undefined, hasDb: !!a.db, gif: !!(a.db && a.db.gif), fam, started: a.disc > 0 && a.db ? saleStart(a.db.history) : null });
     }
     out.profile = { steamid: u.steamid, name: u.name, ownedKnown: u.owned != null, familyKnown: u.family != null, familyAt: u.familyAt || 0, familyNames: u.familyNames || {}, syncedAt: u.syncedAt || 0 };
     out.unavailable = gone;
@@ -59,7 +60,7 @@ class Engine {
     out.list = u.list.map((i) => {
       const a = this.apps[i.appid] || {};
       const db = a.db || null;
-      return { ...i, history: db ? db.history : null, low: db ? db.low : null, lowAt: db ? db.lowAt : null, more: !!(db && db.more) };
+      return { ...i, history: db ? db.history : null, low: db ? db.low : null, lowAt: db ? db.lowAt : null, more: !!(db && db.more), dbAt: db ? db.at : 0, saleEnd: db ? db.saleEnd || 0 : 0, started: db && a.disc > 0 ? saleStart(db.history) : null };
     });
     return out;
   }
@@ -299,7 +300,7 @@ class Engine {
     if (!a) throw new Error('Unknown game');
     const r = await this.steamdb.fetchApp(appid, this.settings.country.toLowerCase(), signal);
     if (!r.history && !r.gif) throw new Error('SteamDB returned no price history or preview for this game (see the log for what it sent).');
-    a.db = { ...r, at: Date.now() };
+    a.db = { ...r, at: Date.now(), saleEnd: a.end || 0 }; // saleEnd: the sale this data was fetched during (to know when it is stale)
     this.appsF.save();
     this.emit('state');
     return a.db;

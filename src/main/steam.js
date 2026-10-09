@@ -95,6 +95,8 @@ function normalizeItem(it) {
     type: it.type,
     tagids: (it.tags ? it.tags.map((t) => t.tagid) : it.tagids) || [],
     disc: p ? p.discount_pct || 0 : 0,
+    // when the current sale ends (unix seconds), 0 if not on sale or unknown
+    end: p && p.discount_pct > 0 ? Math.max(0, ...(p.active_discounts || []).map((d) => d.discount_end_date || 0)) : 0,
     orig: p ? +p.original_price_in_cents || +p.final_price_in_cents || 0 : 0,
     fin: p ? +p.final_price_in_cents || 0 : 0,
     fOrig: p ? p.formatted_original_price || p.formatted_final_price || '' : '',
