@@ -12,6 +12,9 @@ const SW = {
   charts: {},
 };
 const S = SW.S;
+const pref = (k, d) => { try { return localStorage.getItem('sw-' + k) || d; } catch (_) { return d; } };
+const setPref = (k, v) => { try { localStorage.setItem('sw-' + k, v); } catch (_) {} };
+S.mtags = pref('mtags', 'shown'); // My list: 'shown' = the 5 Steam shows, 'all' = every tag
 const PS = 100;
 
 // ---- data ------------------------------------------------------------------------
@@ -143,12 +146,12 @@ function seg(sel, key, fn) {
   el.onclick = (e) => { const b = e.target.closest('button'); if (!b) return; S[key] = b.dataset.v; syncSeg(); fn(); };
 }
 function syncSeg() {
-  for (const [id, key] of [['#mode', 'mode'], ['#scope', 'scope'], ['#bscope', 'scope'], ['#bsrc', 'bsrc'], ['#psrc', 'psrc'], ['#csrc', 'csrc']])
+  for (const [id, key] of [['#mode', 'mode'], ['#scope', 'scope'], ['#bscope', 'scope'], ['#bsrc', 'bsrc'], ['#psrc', 'psrc'], ['#csrc', 'csrc'], ['#mtags', 'mtags']])
     document.querySelectorAll(id + ' button').forEach((b) => b.setAttribute('aria-pressed', b.dataset.v === S[key]));
 }
 
 // ---- my list ---------------------------------------------------------------------------
-const MCOLS = ['', 'Game', 'Why buy it', 'Price now', 'Price history (SteamDB)', 'Note', ''];
+const MCOLS = ['', 'Game', 'Why buy it', 'Price now', 'Price history<br>(SteamDB)', 'Note', ''];
 $('#mhead').innerHTML = MCOLS.map((c) => `<th style="cursor:default">${c}</th>`).join('');
 function spark(h, low) {
   if (!h || h.length < 2) return '';
@@ -177,12 +180,13 @@ function renderMine() {
     if (!g) return `<tr><td></td><td>App ${i.appid} <span class="sm">(details pending)</span></td><td colspan="4"></td><td><button class="btn" data-rm="${i.appid}">Remove</button></td></tr>`;
     total += g.fin || 0;
     const hist = i.history
-      ? `${spark(i.history)}<div class="sm">Low ${price(i.low)} · ${new Date(i.lowAt).toISOString().slice(0, 10)}${g.fin && g.fin <= i.low ? ' <b style="color:var(--good)">at low</b>' : ''}</div>`
+      ? `${spark(i.history)}<div class="sm">Low ${price(i.low)}${g.fin && g.fin <= i.low ? ' <b style="color:var(--good)">at low</b>' : ''}<br>${new Date(i.lowAt).toISOString().slice(0, 10)}</div>`
       : `<button class="btn" data-db="${g.id}">Load from SteamDB</button>`;
-    return `<tr><td style="width:34px">${starBtn(g)}</td><td>${gameCell(g)}</td>
+    const tags = g.tags.map((t, i) => [t, i]).filter(([, i]) => S.mtags === 'all' || i < 5).map(([t, i]) => chip(g, t, i)).join('');
+    return `<tr><td style="width:34px">${starBtn(g)}</td><td>${gameCell(g)}<div class="tags mtags">${tags}</div></td>
  <td style="min-width:170px"><select class="why" data-why="${g.id}">${whyOptions(i.why)}</select></td>
  <td class="num">${g.disc > 0 ? `<span class="disc">-${g.disc}%</span> ` : ''}${priceCell(g)}</td>
- <td>${hist}</td><td><input type="text" class="note" data-note="${g.id}" value="${esc(i.note || '')}" placeholder="Note…"></td>
+ <td>${hist}</td><td><textarea class="note" rows="4" data-note="${g.id}" placeholder="Note…">${esc(i.note || '')}</textarea></td>
  <td><button class="btn" data-rm="${g.id}">Remove</button></td></tr>`;
   }).join('') || `<tr><td colspan="7" class="empty">${items.length ? 'No games with this reason.' : 'Your list is empty. Click ☆ next to a game on the Wishlist tab.'}</td></tr>`;
   $('#mtotal').textContent = rows.length ? `${rows.length} game${rows.length > 1 ? 's' : ''} · total ${price(total)}` : '';
@@ -276,6 +280,14 @@ $('#bought').onclick = () => runSync('sync').catch((e) => info('Sync failed', es
 $('#user').onkeydown = (e) => { if (e.key === 'Enter') $('#sync').click(); };
 $('#cancel').onclick = () => api.cancel();
 $('#cfg').onclick = openSettings;
+
+// ---- theme: System (follow the OS) / Light / Dark -----------------------------------------------------------
+function applyTheme(t) {
+  if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t); else document.documentElement.removeAttribute('data-theme');
+}
+$('#theme').value = pref('theme', 'system');
+$('#theme').onchange = (e) => { setPref('theme', e.target.value); applyTheme(e.target.value); };
+seg('#mtags', 'mtags', () => { setPref('mtags', S.mtags); renderMine(); });
 
 catBtns($('#cats'), S.cats, renderTagList);
 seg('#mode', 'mode', () => { S.page = 0; renderList(); });

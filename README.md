@@ -8,13 +8,14 @@ charts, and a personal buying list with a reason for each game.
 
 - **Any Steam user.** Type a username, profile URL or SteamID64 at the top and press **Sync**. The wishlist must be public.
 - **Wishlist tab.** Tag filtering (match all / any, shown-on-Steam vs. extra tags), search, sale / release / list filters, sortable columns, tag categories (genre, theme, players, visuals, features).
-- **My list tab.** Star (☆) any game to add it. Each item has a customizable **Why buy it** dropdown (“＋ New reason…” or edit them in Settings), a note, current price, SteamDB price history sparkline and all-time low, and a running total.
+- **My list tab.** Star (☆) any game to add it. Each item shows its tags under the thumbnail (toggle *Shown tags* / *All tags*) and has a customizable **Why buy it** dropdown (“＋ New reason…” or edit them in Settings), a roomy note box, current price, SteamDB price history sparkline and all-time low, and a running total.
 - **Tag bubbles.** Area = games with the tag; the dark core inside a bubble is how many of those are in My list. Switch the source to *My list* to chart only the tags of games you saved.
 - **Price × Discount · tags.** Same axes (x = discount, y = price), one bubble per tag at its average discount/price.
 - **Price × Discount · covers.** Same axes with game thumbnails instead of bubbles (zoom and pan; list items are outlined).
 - **Family library.** Optionally hide games already in your Steam Family library (see below).
 - **After buying.** On the My list tab, **“I bought some games · refresh”** re-syncs, drops owned games from the wishlist, and removes them from your list (a summary is shown).
 - **Cached.** Game data (`apps.json`), your lists (`users.json`) and every image (`images/`) are kept in the app's user-data folder, so reopening is instant and offline-friendly.
+- **Theme.** The header selector switches between System (follows your OS), Light and Dark and remembers the choice.
 - **Gentle on the sites.** All requests go through one per-host queue with jittered minimum gaps (Steam API 2.5 s, community 3.5 s, SteamDB 9 s, image CDN 0.3 s), Retry-After-aware backoff on 429/5xx, 25 games per store request, and a *Slowness* multiplier in Settings. Syncs can be cancelled; progress is saved after every batch.
 
 ## Install

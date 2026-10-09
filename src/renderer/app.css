@@ -42,3 +42,11 @@ dialog::backdrop{background:#0009}
 .dlg .foot{display:flex;justify-content:flex-end;gap:8px}
 .dlg hr{border:0;border-top:1px solid var(--bd);width:100%;margin:0}
 svg.spark{display:block}
+
+.hdr-actions select{width:auto}
+table.mine th{white-space:normal;line-height:1.25;vertical-align:bottom}
+table.mine th:nth-child(5){width:140px}
+table.mine th:nth-child(6){width:32%}
+table.mine textarea.note{width:100%;min-height:86px;resize:vertical;background:var(--bg);color:var(--fg);border:1px solid var(--bd);border-radius:4px;padding:7px 9px;font:inherit}
+.mtags{margin-top:8px}
+.mtags .tg{cursor:default}
