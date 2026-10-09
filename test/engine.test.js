@@ -550,7 +550,7 @@ test('games saved before preview addresses existed are refreshed once, even if r
   assert.equal(s.calls.length, 2, 'and not again (mt is now defined)');
 });
 
-test('SteamDB queue order: never loaded, then price changed / sale ended, then the rest (not loaded in the last 5 days); My list and sales first', async () => {
+test('SteamDB queue order: never loaded, then price changed / sale ended, then loaded games on sale (not loaded in the last 5 days); My list and sales first', async () => {
   const s = fakeSteam({ wishlist: [1, 2, 3, 4, 5, 6, 7] });
   const e = mk(s);
   await e.sync();
@@ -566,7 +566,7 @@ test('SteamDB queue order: never loaded, then price changed / sale ended, then t
   set(6, { db: db(now - 20 * D, 100, { saleEnd: Math.floor((now - 3 * D) / 1000) }) });
   set(7, { db: db(now - 9 * D, 100) });
   e.listAdd(2); // a list item that was never loaded goes first inside pass 1
-  assert.deepEqual(e.bgQueue('all'), [2, 1, 3, 6, 5, 7]);
+  assert.deepEqual(e.bgQueue('all'), [2, 1, 3, 6, 5], 'pass 3 only has loaded games that are on sale now (7 is loaded and not on sale)');
   assert.deepEqual(e.bgQueue('all', 2), [2, 1, 3, 6], 'Sync only does passes 1 and 2');
   assert.deepEqual(e.bgQueue('sale'), [2, 1, 3, 5], 'sale scope: My list + games on sale');
   assert.deepEqual(e.bgQueue('mine'), [2]);

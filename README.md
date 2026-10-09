@@ -18,7 +18,7 @@ charts, and a personal buying list with a reason for each game.
 - **SteamDB in the background.** On My list, pick a scope (*My list*, *My list + wishlist on sale*, or *My list + whole wishlist*) and press **Load SteamDB in background**. Leave the app open; it shows progress and a countdown. Order of work, for the background loader and for the SteamDB step of Sync:
   1. games **never loaded** from SteamDB,
   2. games whose **Steam price changed** since their SteamDB data was fetched (or whose sale has ended),
-  3. everything else, **except games loaded in the last 5 days**.
+  3. games loaded before that are **on sale now**, **except those loaded in the last 5 days** (games already loaded and not on sale are left alone).
 
   Inside each step, My list comes first, then games on sale (biggest discount first). Pace (*Settings → SteamDB background pace*): Auto = about 30 s between games (a few seconds through Firecrawl), or choose Slow (1-2 min), Medium (20-40 s) or Fast (8-15 s). At 30 s the whole wishlist takes about a day and a half. Games SteamDB had nothing for are skipped for a week. If SteamDB blocks it (Cloudflare check not solved in 3 minutes, or repeated errors) it stops, the button becomes available again, and a banner offers **Open SteamDB page** (to solve the check) and **Resume**. It does not continue after you close the app.
 - **Lowest price.** Once a game has SteamDB data, its lowest known price is shown in `( )` under the current price in both tables (blue when the game is at that price now). Hover it to see whether it is the 2-year or all-time low.

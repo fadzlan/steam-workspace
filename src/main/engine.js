@@ -392,7 +392,7 @@ class Engine {
   // Which pass a game belongs to (0 = not needed right now):
   //   1 never loaded from SteamDB
   //   2 Steam's price changed since the SteamDB data was fetched, or the sale that data came from has ended
-  //   3 everything else, unless it was loaded in the last 5 days
+  //   3 loaded before and on sale now, unless it was loaded in the last 5 days (loaded and not on sale: nothing to refresh)
   _bgTier(a) {
     if (!a || !a.name || a.gone) return 0;
     if (a.dbSkip && Date.now() - a.dbSkip < 7 * DAY) return 0; // SteamDB had nothing / failed recently
@@ -401,6 +401,7 @@ class Engine {
     const ended = db.saleEnd && Date.now() / 1000 > db.saleEnd && db.at / 1000 < db.saleEnd;
     const changed = db.fin !== undefined && a.fin !== db.fin;
     if (ended || changed) return 2;
+    if (!(a.disc > 0)) return 0;
     return Date.now() - db.at < 5 * DAY ? 0 : 3;
   }
 
