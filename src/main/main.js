@@ -9,6 +9,7 @@ const { Steam } = require('./steam');
 const { SteamDB } = require('./steamdb');
 const { Engine } = require('./engine');
 const { Images, EXT_MIME } = require('./images');
+const log = require('./log');
 
 protocol.registerSchemesAsPrivileged([{ scheme: 'swimg', privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
 
@@ -20,6 +21,8 @@ let win, engine, images;
 
 function createEngine() {
   const dir = path.join(app.getPath('userData'), 'cache');
+  log.init(path.join(app.getPath('userData'), 'logs'));
+  log.info(`Steam Workspace ${app.getVersion()} electron=${process.versions.electron} ${process.platform} ${process.arch}`);
   const throttle = new Throttle(() => (engine ? engine.settings.slowness : 1));
   engine = new Engine({ dir, steam: new Steam(throttle), steamdb: new SteamDB(throttle), emit: (k) => send(k) });
   images = new Images(path.join(dir, 'images'), throttle, (id) => engine.hoverUrl(id));
@@ -82,6 +85,7 @@ function registerIpc() {
     await session.fromPartition('persist:steamlogin').clearStorageData();
     engine.setSettings({ familyToken: null, familyTokenAt: 0 });
   }));
+  ipcMain.handle('log:open', wrap(async () => { const d = log.dir(); if (!d) throw new Error('Log not available'); await shell.openPath(d); return d; }));
   ipcMain.handle('cache:info', wrap(() => images.size()));
   ipcMain.handle('cache:clear', wrap(() => { images.clear(); }));
   ipcMain.handle('open', wrap((url) => {
@@ -89,6 +93,9 @@ function registerIpc() {
     return shell.openExternal(url);
   }));
 }
+
+process.on('uncaughtException', (e) => log.error('uncaughtException', e));
+process.on('unhandledRejection', (e) => log.error('unhandledRejection', e));
 
 app.whenReady().then(() => {
   setFetch((u, o) => net.fetch(u, o));
@@ -100,6 +107,11 @@ app.whenReady().then(() => {
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true },
   });
   win.setMenuBarVisibility(false);
+  win.webContents.on('console-message', (e, lvl, msg) => {
+    const lv = typeof e.level === 'string' ? { debug: 0, info: 1, warning: 2, error: 3 }[e.level] : lvl;
+    if (lv >= 2) log.warn('renderer:', e.message || msg);
+  });
+  win.webContents.on('render-process-gone', (_e, d) => log.error('render-process-gone', d));
   win.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url).catch(() => {}); return { action: 'deny' }; });
   win.loadURL(pathToFileURL(path.join(__dirname, '..', 'renderer', 'index.html')).href + (process.env.SW_HASH ? '#' + process.env.SW_HASH : ''));
   if (process.env.SW_SHOT) win.webContents.once('did-finish-load', () => setTimeout(async () => {

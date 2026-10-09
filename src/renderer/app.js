@@ -219,10 +219,12 @@ async function openSettings() {
  <label>“Why buy” reasons (one per line)<textarea id="s-why">${esc(whys)}</textarea></label>
  <hr>
  <div class="row"><button class="btn" id="s-sdb">Open SteamDB check</button><span class="sm">If SteamDB shows a Cloudflare check, solve it once here.</span></div>
+ <div class="row"><button class="btn" id="s-log">Open log folder</button><span class="sm">Attach <code>app.log</code> when reporting a problem. API keys and tokens are scrubbed.</span></div>
  <div class="row"><button class="btn" id="s-clr">Clear image cache</button><span class="sm">${cache.files} files · ${(cache.bytes / 1048576).toFixed(1)} MB</span></div>
  <form method="dialog" class="foot"><button class="btn" value="no">Cancel</button><button class="btn pri" value="ok">Save</button></form>`, (d) => {
     d.querySelector('#s-login').onclick = async () => { try { await api.steamLogin(); d.close('login'); } catch (e) { info('Sign-in failed', esc(e.message)); } };
     const lo = d.querySelector('#s-logout'); if (lo) lo.onclick = async () => { await api.steamLogout(); d.close('login'); };
+    d.querySelector('#s-log').onclick = () => api.openLogs().catch((e) => info('Log folder', esc(e.message)));
     d.querySelector('#s-sdb').onclick = () => api.steamdbCheck();
     d.querySelector('#s-clr').onclick = async () => { await api.cacheClear(); d.querySelector('#s-clr').textContent = 'Cleared'; };
   });

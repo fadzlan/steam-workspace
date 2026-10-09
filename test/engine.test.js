@@ -103,3 +103,9 @@ test('games Steam no longer returns are "unavailable", not pending, and retried 
   await e.sync();
   assert.equal(s.calls.length, n + 1, 'unavailable games are not refetched within a week');
 });
+
+test('log redacts secrets', () => {
+  const { redact } = require('../src/main/log');
+  assert.equal(redact('GET /x?key=ABC123&steamid=1'), 'GET /x?key=***&steamid=1');
+  assert.equal(redact('?access_token=eyJ.x.y'), '?access_token=***');
+});

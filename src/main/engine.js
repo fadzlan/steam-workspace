@@ -1,6 +1,7 @@
 'use strict';
 const path = require('path');
 const { JsonFile } = require('./store');
+const log = require('./log');
 
 const DAY = 864e5;
 const DEFAULT_WHYS = ['Great price', 'Wanted for a long time', 'Friends play it', 'Highly rated', 'Genre I love', 'Near historical low', 'Good for the family'];
@@ -93,6 +94,8 @@ class Engine {
 
   _progress(phase, msg, done = 0, total = 0) {
     Object.assign(this.status, { phase, msg, done, total });
+    if (phase !== this._lastPhase || done === total) log.info(`sync ${phase}: ${msg}`);
+    this._lastPhase = phase;
     this.emit('progress');
   }
 
@@ -103,13 +106,16 @@ class Engine {
     const signal = this.abort.signal;
     Object.assign(this.status, { running: true, warnings: [], phase: 'profile', msg: 'Resolving profile…', done: 0, total: 0 });
     const result = { removedFromList: [] };
+    log.info(`sync start mode=${mode} user=${this.settings.username} country=${this.settings.country} excludeFamily=${this.settings.excludeFamily}`);
     try {
       await this._syncProfile(signal, result);
       await this._syncDetails(mode, signal);
       await this._syncSteamDb(signal);
       this.user().syncedAt = Date.now();
       this._progress('done', 'Up to date.');
+      log.info(`sync done: ${this.getState().games.length} games, counts=${JSON.stringify(this.getState().counts)}`);
     } catch (e) {
+      log.error(signal.aborted ? 'sync cancelled' : e);
       this.status.msg = signal.aborted ? 'Cancelled.' : e.message;
       this.status.phase = signal.aborted ? 'cancelled' : 'error';
       if (!signal.aborted) this.status.warnings.push(e.message);
@@ -246,7 +252,7 @@ class Engine {
     return a.db;
   }
 
-  _warn(m) { if (!this.status.warnings.includes(m)) this.status.warnings.push(m); }
+  _warn(m) { log.warn(m); if (!this.status.warnings.includes(m)) this.status.warnings.push(m); }
 }
 
 module.exports = { Engine, DEFAULT_WHYS };

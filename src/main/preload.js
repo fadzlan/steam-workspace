@@ -20,6 +20,7 @@ contextBridge.exposeInMainWorld('api', {
   steamdbCheck: () => call('steamdb:check'),
   steamLogin: () => call('steam:login'),
   steamLogout: () => call('steam:logout'),
+  openLogs: () => call('log:open'),
   cacheInfo: () => call('cache:info'),
   cacheClear: () => call('cache:clear'),
   open: (url) => call('open', url),

@@ -41,6 +41,7 @@ macOS builds are not provided.
 - **Sandbox errors on Linux.** On distributions that restrict unprivileged user namespaces (e.g. Ubuntu 24.04) the AppImage may print a `chrome-sandbox` error. The `.deb` and Arch packages install the sandbox helper correctly, so prefer those; as a last resort start the AppImage with `--no-sandbox`.
 - **Architectures.** Only 64-bit x86 (x64 / amd64 / x86_64) is built.
 - **Where data lives.** Cached game data, images and your lists are stored in the app's user-data folder (`~/.config/` on Linux, `%APPDATA%` on Windows). Uninstalling does not remove it; delete that folder to reset, or use *Settings → Clear image cache*.
+- **Logs.** The app writes `app.log` (rolled to `app.old.log` at 1 MB) in a `logs` folder inside the user-data folder. Open it with *Settings → Open log folder*. It records sync steps, HTTP errors/retries and crashes; API keys and tokens are scrubbed. Attach it when reporting a problem.
 - **Updating.** There is no auto-update yet: install the newer release over the old one. Your data is kept.
 - **AUR.** The package is prepared for the Arch User Repository (`steam-workspace-bin`, `packaging/aur/`) but not published there yet. Until then use the `.pkg.tar.zst` or `PKGBUILD` above.
 

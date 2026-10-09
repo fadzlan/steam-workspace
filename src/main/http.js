@@ -1,5 +1,6 @@
 'use strict';
 const { sleep } = require('./throttle');
+const log = require('./log');
 
 const UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) SteamWorkspace/0.1 Chrome/120 Safari/537.36';
 
@@ -19,6 +20,7 @@ async function get(throttle, url, { host, minMs, type = 'json', headers = {}, si
       return res.text();
     }
     const retryable = res.status === 429 || res.status >= 500;
+    log.warn(`HTTP ${res.status} ${host}${new URL(url).pathname} (attempt ${attempt + 1}${retryable && attempt < retries ? ', will retry' : ''})`);
     if (!retryable || attempt >= retries) {
       const err = new Error(`HTTP ${res.status} for ${host}`);
       err.status = res.status;
