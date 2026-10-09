@@ -227,6 +227,9 @@ class Engine {
     const names = { ...(u.familyNames || {}) };
     const add = (appid, sid) => { if (sid && sid !== u.steamid) (owners[appid] ||= new Set()).add(sid); };
     let ok = false;
+    if (settings.familyToken && Date.now() - settings.familyTokenAt >= DAY) {
+      this._warn('Your Steam sign-in for the family library has expired (it lasts about 24 hours). Sign in again in Settings, then Sync.');
+    }
     if (settings.familyToken && Date.now() - settings.familyTokenAt < DAY) {
       try {
         const apps = await steam.getFamilyLibrary(settings.familyToken, u.steamid, signal);
@@ -255,8 +258,12 @@ class Engine {
       u.family = Object.keys(owners).map(Number);
       u.familyNames = names;
       u.familyAt = Date.now();
-      log.info(`family: ${u.family.length} games owned by ${sids.size} member(s)`);
-    } else if (!members.length && !settings.familyToken) this._warn('Family library is on, but you have not signed in or listed family members (Settings).');
+      const wl = new Set(u.wishlist.map((w) => w.appid));
+      log.info(`family: ${u.family.length} games owned by ${sids.size} member(s); ${u.family.filter((a) => wl.has(a)).length} of them are on your wishlist`);
+    } else {
+      log.warn('family: nothing could be read');
+      if (!members.length && !settings.familyToken) this._warn('Family library is on, but you have not signed in or listed family members (Settings).');
+    }
   }
 
   async _syncDetails(mode, signal) {

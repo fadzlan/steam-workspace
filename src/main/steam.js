@@ -1,5 +1,6 @@
 'use strict';
 const { get } = require('./http');
+const log = require('./log');
 
 const API = 'api.steampowered.com';
 const COMMUNITY = 'steamcommunity.com';
@@ -62,10 +63,17 @@ class Steam {
   async getFamilyLibrary(token, steamid, signal) {
     const q = `access_token=${encodeURIComponent(token)}&steamid=${steamid}`;
     const g = await this._json(`https://${API}/IFamilyGroupsService/GetFamilyGroupForUser/v1/?${q}`, signal);
-    const gid = g.response && g.response.family_groupid;
+    const gr = g.response || {};
+    // tolerate field-name differences: family_groupid, familygroupid, ...
+    const gid = gr.family_groupid || gr.familygroupid || gr[Object.keys(gr).find((k) => /group.?id/i.test(k) && gr[k])];
+    log.info(`family: GetFamilyGroupForUser -> group ${gid ? 'found' : 'NOT found'} (response fields: ${Object.keys(gr).join(', ') || 'none'})`);
     if (!gid) return null;
     const j = await this._json(`https://${API}/IFamilyGroupsService/GetSharedLibraryApps/v1/?${q}&family_groupid=${gid}&include_own=true&include_free=false&include_excluded=false&language=english`, signal);
-    return ((j.response && j.response.apps) || []).map((a) => ({ appid: a.appid, owners: (a.owner_steamids || []).map(String) }));
+    const r = j.response || {};
+    const apps = (r.apps || []).map((a) => ({ appid: a.appid, owners: (a.owner_steamids || []).map(String) }));
+    const owners = new Set(apps.flatMap((a) => a.owners));
+    log.info(`family: GetSharedLibraryApps -> ${apps.length} apps, ${owners.size} owner(s) (response fields: ${Object.keys(r).join(', ') || 'none'}; first app fields: ${r.apps && r.apps[0] ? Object.keys(r.apps[0]).join(', ') : 'n/a'})`);
+    return apps;
   }
 
   // Batch store lookup: price, reviews, tags (ordered by weight), release, devs.

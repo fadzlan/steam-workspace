@@ -355,3 +355,9 @@ test('engine prefers Firecrawl when enabled (short pacing) and stops cleanly on 
 test('log redacts Firecrawl keys', () => {
   assert.equal(require('../src/main/log').redact('key fc-abcdef0123456789 end'), 'key fc-*** end');
 });
+
+test('expired family sign-in is reported instead of silently skipped', async () => {
+  const e = mk(fakeSteam(), { useFamily: true, familyToken: 'tok', familyTokenAt: Date.now() - 2 * 864e5 });
+  await e.sync();
+  assert.ok(e.getState().status.warnings.some((w) => /expired/.test(w)));
+});

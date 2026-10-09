@@ -288,12 +288,22 @@ async function promptText(title, label) {
   return r === 'ok' ? val : '';
 }
 
+function famStatus() {
+  const st = SW.st, p = st.profile, c = st.counts || {};
+  if (!st.settings.useFamily) return 'Off.';
+  const token = st.settings.hasToken ? 'Steam sign-in valid (lasts ~24 h)' : 'not signed in, or the sign-in expired';
+  if (!p || !p.familyAt) return `Not read yet: press Sync. (${token})`;
+  const members = Object.values(p.familyNames || {});
+  return `Last read ${new Date(p.familyAt).toLocaleString()}: ${c.familyOwned || 0} of your wishlist games are in the family library${members.length ? ' (members: ' + esc(members.join(', ')) + ')' : ''}. ${token}.`;
+}
+
 async function openSettings() {
   const s = SW.st.settings, whys = SW.st.whys.join('\n');
   const cache = await api.cacheInfo().catch(() => ({ files: 0, bytes: 0 }));
   const r = await modal(`<h2>Settings</h2>
  <label>Store country (prices & currency, 2-letter code)<input type="text" id="s-cc" value="${esc(s.country)}" maxlength="2"></label>
  <label class="ck"><input type="checkbox" id="s-fam"${s.useFamily ? ' checked' : ''}> Read my Steam Family library (adds 👪 badges and a Family filter on the Wishlist tab)</label>
+ <div class="sm" id="s-famstatus">${famStatus()}</div>
  <div class="row"><button class="btn" id="s-login">${s.hasToken ? 'Re-sign in to Steam' : 'Sign in to Steam to read family library'}</button>${s.hasToken ? '<button class="btn" id="s-logout">Sign out</button><span class="sm">signed in (token lasts ~24h)</span>' : ''}</div>
  <label>…or list family members' profiles (usernames or URLs, one per line; their game details must be public)<textarea id="s-mem">${esc(s.familyMembers)}</textarea></label>
  <label>Steam Web API key (optional, reads private-ish libraries more reliably)<input type="text" id="s-key" value="${esc(s.apiKey)}" autocomplete="off"></label>
