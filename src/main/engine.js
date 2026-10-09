@@ -6,7 +6,7 @@ const { assetUrl } = require('./steam');
 
 const DAY = 864e5;
 const DEFAULT_WHYS = ['Great price', 'Wanted for a long time', 'Friends play it', 'Highly rated', 'Genre I love', 'Near historical low', 'Good for the family'];
-const DEFAULT_SETTINGS = { username: '', country: 'MY', excludeFamily: false, familyMembers: '', apiKey: '', slowness: 1, familyToken: null, familyTokenAt: 0 };
+const DEFAULT_SETTINGS = { username: '', country: 'MY', useFamily: false, familyMembers: '', apiKey: '', slowness: 1, familyToken: null, familyTokenAt: 0 };
 const BATCH = 25;
 
 // Everything stateful and network-driven lives here; electron-specific bits are injected
@@ -17,6 +17,8 @@ class Engine {
     this.steamdb = steamdb;
     this.emit = emit || (() => {});
     this.settingsF = new JsonFile(path.join(dir, 'settings.json'), DEFAULT_SETTINGS);
+    if (this.settingsF.data.excludeFamily) this.settingsF.data.useFamily = true; // old name of the option
+    delete this.settingsF.data.excludeFamily;
     this.appsF = new JsonFile(path.join(dir, 'apps.json'), { apps: {}, tags: {}, tagsAt: 0 });
     this.usersF = new JsonFile(path.join(dir, 'users.json'), { users: {}, current: null });
     this.status = { running: false, phase: '', done: 0, total: 0, msg: '', warnings: [] };
@@ -37,20 +39,22 @@ class Engine {
     const out = { settings: s, status: this.status, profile: null, games: [], tags: this.appsF.data.tags, list: [], whys: DEFAULT_WHYS, counts: {} };
     if (!u) return out;
     const owned = new Set(u.owned || []);
-    const fam = new Set(s.excludeFamily ? u.family || [] : []);
-    let hiddenOwned = 0, hiddenFamily = 0, pending = 0, unavailable = 0;
+    const famOwners = u.familyOwners || {};
+    const famLegacy = new Set(u.familyOwners ? [] : u.family || []);
+    let hiddenOwned = 0, pending = 0, unavailable = 0, familyOwned = 0;
     const gone = [];
     for (const w of u.wishlist) {
       if (owned.has(w.appid)) { hiddenOwned++; continue; }
-      if (fam.has(w.appid)) { hiddenFamily++; continue; }
       const a = this.apps[w.appid];
       if (a && a.gone) { unavailable++; gone.push({ id: w.appid, name: a.name || '', added: w.added }); continue; } // Steam returns nothing: delisted, removed or region-locked
       if (!a || !a.name) { pending++; continue; }
-      out.games.push({ ...a, added: w.added, db: undefined, hasDb: !!a.db, gif: !!(a.db && a.db.gif) });
+      const fam = famOwners[w.appid] || (famLegacy.has(w.appid) ? ['?'] : []); // steamids of family members who own it
+      if (fam.length) familyOwned++;
+      out.games.push({ ...a, added: w.added, db: undefined, hasDb: !!a.db, gif: !!(a.db && a.db.gif), fam });
     }
-    out.profile = { steamid: u.steamid, name: u.name, ownedKnown: u.owned != null, familyKnown: u.family != null, familyAt: u.familyAt || 0, syncedAt: u.syncedAt || 0 };
+    out.profile = { steamid: u.steamid, name: u.name, ownedKnown: u.owned != null, familyKnown: u.family != null, familyAt: u.familyAt || 0, familyNames: u.familyNames || {}, syncedAt: u.syncedAt || 0 };
     out.unavailable = gone;
-    out.counts = { wishlist: u.wishlist.length, hiddenOwned, hiddenFamily, pending, unavailable };
+    out.counts = { wishlist: u.wishlist.length, hiddenOwned, familyOwned, pending, unavailable };
     out.whys = u.whys || DEFAULT_WHYS;
     out.list = u.list.map((i) => {
       const a = this.apps[i.appid] || {};
@@ -140,7 +144,7 @@ class Engine {
     const signal = this.abort.signal;
     Object.assign(this.status, { running: true, warnings: [], phase: 'profile', msg: 'Resolving profile…', done: 0, total: 0 });
     const result = { removedFromList: [] };
-    log.info(`sync start mode=${mode} user=${this.settings.username} country=${this.settings.country} excludeFamily=${this.settings.excludeFamily}`);
+    log.info(`sync start mode=${mode} user=${this.settings.username} country=${this.settings.country} useFamily=${this.settings.useFamily}`);
     try {
       await this._syncProfile(signal, result);
       await this._syncDetails(mode, signal);
@@ -185,7 +189,7 @@ class Engine {
     if (own) { u.owned = own; u.ownedAt = Date.now(); }
     else this._warn('Your game library is private, so purchases can only be detected through the wishlist itself. Make "Game details" public or add a Steam Web API key in Settings.');
 
-    if (settings.excludeFamily) await this._syncFamily(u, signal);
+    if (settings.useFamily) await this._syncFamily(u, signal);
 
     // Purchased / removed games leave the buying list.
     const wl = new Set(u.wishlist.map((w) => w.appid));
@@ -201,28 +205,44 @@ class Engine {
     this._saveUsers();
   }
 
+  // Who in the family owns what: appid -> [steamid of each family member that owns it] (never includes you).
   async _syncFamily(u, signal) {
     const { steam, settings } = this;
     this._progress('family', 'Reading family library…');
-    const ids = new Set();
+    const owners = {};
+    const names = { ...(u.familyNames || {}) };
+    const add = (appid, sid) => { if (sid && sid !== u.steamid) (owners[appid] ||= new Set()).add(sid); };
     let ok = false;
     if (settings.familyToken && Date.now() - settings.familyTokenAt < DAY) {
       try {
         const apps = await steam.getFamilyLibrary(settings.familyToken, u.steamid, signal);
-        if (apps) { apps.forEach((a) => ids.add(a)); ok = true; u.familySource = 'family-group'; }
-      } catch (e) { this._warn(`Family library: ${e.message}`); }
+        if (apps) { for (const a of apps) for (const sid of a.owners) add(a.appid, sid); ok = true; u.familySource = 'family-group'; }
+        else this._warn('Steam says you are not in a Family group (signed-in account).');
+      } catch (e) { if (signal.aborted) throw e; this._warn(`Family library: ${e.message}`); }
     }
     const members = String(settings.familyMembers || '').split(/[\n,]+/).map((s) => s.trim()).filter(Boolean);
     for (const m of members) {
       try {
         const p = await steam.resolveProfile(m, signal);
+        names[p.steamid] = p.name;
         const owned = await steam.getOwned(p.steamid, settings.apiKey, signal);
-        if (owned) { owned.forEach((a) => ids.add(a)); ok = true; u.familySource = u.familySource || 'members'; }
+        if (owned) { owned.forEach((a) => add(a, p.steamid)); ok = true; u.familySource = u.familySource || 'members'; }
         else this._warn(`${m}'s game library is private.`);
       } catch (e) { if (signal.aborted) throw e; this._warn(`${m}: ${e.message}`); }
     }
-    if (ok) { u.family = [...ids]; u.familyAt = Date.now(); }
-    else if (!members.length && !(settings.familyToken)) this._warn('Family exclusion is on, but no family sign-in or members are configured (Settings).');
+    // display names for family members we only know by SteamID
+    const sids = new Set(Object.values(owners).flatMap((x) => [...x]));
+    for (const sid of sids) {
+      if (names[sid]) continue;
+      try { names[sid] = (await steam.resolveProfile(sid, signal)).name; } catch (e) { if (signal.aborted) throw e; names[sid] = sid; }
+    }
+    if (ok) {
+      u.familyOwners = Object.fromEntries(Object.entries(owners).map(([a, set]) => [a, [...set]]));
+      u.family = Object.keys(owners).map(Number);
+      u.familyNames = names;
+      u.familyAt = Date.now();
+      log.info(`family: ${u.family.length} games owned by ${sids.size} member(s)`);
+    } else if (!members.length && !settings.familyToken) this._warn('Family library is on, but you have not signed in or listed family members (Settings).');
   }
 
   async _syncDetails(mode, signal) {
@@ -230,9 +250,8 @@ class Engine {
     const state = this.getState();
     const visible = new Set(state.games.map((g) => g.id));
     const owned = new Set(u.owned || []);
-    const fam = new Set(this.settings.excludeFamily ? u.family || [] : []);
     const inList = new Set(u.list.map((i) => i.appid));
-    const wanted = u.wishlist.filter((w) => !owned.has(w.appid) && !fam.has(w.appid));
+    const wanted = u.wishlist.filter((w) => !owned.has(w.appid));
     // list items first, then newest wishlist additions
     wanted.sort((a, b) => (inList.has(b.appid) - inList.has(a.appid)) || b.added - a.added);
     const cutoff = Date.now() - (mode === 'prices' ? 0 : DAY);

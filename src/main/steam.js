@@ -58,13 +58,14 @@ class Steam {
   }
 
   // Real Steam Family library, needs a web token from a signed-in store session.
+  // Returns [{appid, owners:[steamid,...]}] (owners include you for your own games), or null if not in a family.
   async getFamilyLibrary(token, steamid, signal) {
     const q = `access_token=${encodeURIComponent(token)}&steamid=${steamid}`;
     const g = await this._json(`https://${API}/IFamilyGroupsService/GetFamilyGroupForUser/v1/?${q}`, signal);
     const gid = g.response && g.response.family_groupid;
     if (!gid) return null;
     const j = await this._json(`https://${API}/IFamilyGroupsService/GetSharedLibraryApps/v1/?${q}&family_groupid=${gid}&include_own=true&include_free=false&include_excluded=false&language=english`, signal);
-    return ((j.response && j.response.apps) || []).map((a) => a.appid);
+    return ((j.response && j.response.apps) || []).map((a) => ({ appid: a.appid, owners: (a.owner_steamids || []).map(String) }));
   }
 
   // Batch store lookup: price, reviews, tags (ordered by weight), release, devs.

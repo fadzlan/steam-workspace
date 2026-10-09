@@ -6,7 +6,7 @@ function showTip(e, html) {
   tip.style.left = Math.min(e.clientX + 14, innerWidth - 240) + 'px'; tip.style.top = Math.min(e.clientY + 14, innerHeight - 90) + 'px';
 }
 const hideTip = () => { tip.style.display = 'none'; };
-const pool = (src) => (src === 'mine' ? SW.games.filter((g) => SW.listIds.has(g.id)) : SW.games);
+const pool = (src) => SW.games.filter((g) => famMatch(g) && (src !== 'mine' || SW.listIds.has(g.id)));
 const empty = (host, msg) => { host.innerHTML = `<div class="hello">${msg}</div>`; };
 function drillToWishlist(tagId) { hideTip(); S.sel = new Set([tagId]); S.page = 0; show('list'); window.scrollTo(0, 0); }
 

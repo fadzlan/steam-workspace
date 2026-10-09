@@ -12,7 +12,7 @@ charts, and a personal buying list with a reason for each game.
 - **Tag bubbles.** Area = games with the tag; the dark core inside a bubble is how many of those are in My list. Switch the source to *My list* to chart only the tags of games you saved.
 - **Price × Discount · tags.** Same axes (x = discount, y = price), one bubble per tag at its average discount/price.
 - **Price × Discount · covers.** Same axes with game thumbnails instead of bubbles (zoom and pan; list items are outlined).
-- **Family library.** Optionally hide games already in your Steam Family library (see below).
+- **Family library.** Optionally read your Steam Family library: games a family member owns get a 👪 badge naming who, and a **Family** filter on the Wishlist tab lets you show all, hide family-owned, show only family-owned, or only games owned by one member (see below).
 - **After buying.** On the My list tab, **“I bought some games · refresh”** re-syncs, drops owned games from the wishlist, and removes them from your list (a summary is shown).
 - **Cached.** Game data (`apps.json`), your lists (`users.json`) and every image (`images/`) are kept in the app's user-data folder, so reopening is instant and offline-friendly.
 - **Theme.** The header selector switches between System (follows your OS), Light and Dark and remembers the choice.
@@ -70,10 +70,13 @@ Steam is always preferred; SteamDB is queried only for history and the hover pre
 
 ### Family library
 
-*Settings → Exclude games already in my Steam Family library*, then either:
+*Settings → Read my Steam Family library*, then either:
 
-1. **Sign in to Steam** (opens a normal Steam login window; the app only reads the short-lived web token, ~24 h), or
+1. **Sign in to Steam** (opens a normal Steam login window; the app only reads the short-lived web token, ~24 h), which reads the whole family group and who owns what, or
 2. list family members' profiles (their *Game details* must be public).
+
+Press **Sync**. Family-owned games then show a 👪 badge with the owner names, and a **Family** dropdown appears in the Wishlist toolbar:
+*show all*, *hide family-owned*, *only family-owned*, or *owned by <member>*. The filter also applies to the charts. Games you own yourself are always removed from the wishlist.
 
 ### SteamDB and Cloudflare
 

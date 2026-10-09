@@ -14,6 +14,7 @@ const SW = {
 const S = SW.S;
 const pref = (k, d) => { try { return localStorage.getItem('sw-' + k) || d; } catch (_) { return d; } };
 const setPref = (k, v) => { try { localStorage.setItem('sw-' + k, v); } catch (_) {} };
+S.fam = pref('fam', 'all'); // family filter: all | hide | only | m:<steamid>
 S.mtags = pref('mtags', 'shown'); // My list: 'shown' = the 5 Steam shows, 'all' = every tag
 const PS = 100;
 
@@ -39,7 +40,17 @@ const price = (cents) => SW.pre + (cents / 100).toFixed(2);
 const inSet = (g) => (S.scope === 'shown' ? g.shown : g.all);
 const dstr = (ts) => (ts ? new Date(ts * 1000).toISOString().slice(0, 10) : '—');
 
+function famMatch(g) {
+  const f = g.fam || [];
+  if (S.fam === 'hide') return f.length === 0;
+  if (S.fam === 'only') return f.length > 0;
+  if (S.fam.startsWith('m:')) return f.includes(S.fam.slice(2));
+  return true;
+}
+const famNames = (g) => (g.fam || []).map((id) => (SW.st.profile.familyNames || {})[id] || 'a family member');
+
 function pass(g, skipTags) {
+  if (!famMatch(g)) return false;
   if (S.type === 'game' && g.type !== 0) return false;
   if (S.type === 'dlc' && g.type !== 4) return false;
   if (S.sale === 'sale' && g.disc <= 0) return false;
@@ -104,7 +115,8 @@ const ratingCell = (g) => g.rc
   ? `<div class="rv"><span>${g.rp}%</span><span class="rvb"><i style="width:${g.rp}%;background:${g.rp >= 70 ? 'var(--good)' : g.rp >= 40 ? 'var(--mixed)' : 'var(--bad)'}"></i></span><span class="sm">${g.rc.toLocaleString()}</span></div>`
   : '<span class="sm">—</span>';
 const starBtn = (g) => `<button class="star${SW.listIds.has(g.id) ? ' on' : ''}" data-star="${g.id}" title="${SW.listIds.has(g.id) ? 'Remove from my list' : 'Add to my list'}">${SW.listIds.has(g.id) ? '★' : '☆'}</button>`;
-const gameCell = (g, extra = '') => `<div class="gm"><div class="th">${thumb(g)}</div><div class="gn"><a href="https://store.steampowered.com/app/${g.id}" data-open>${esc(g.name)}</a>${g.type === 4 ? '<span class="badge" style="width:max-content;margin:0">DLC</span>' : ''}${extra}</div></div>`;
+const famBadge = (g) => (g.fam && g.fam.length ? `<span class="famb" title="Owned in your Steam Family library">👪 ${esc(famNames(g).join(', '))}</span>` : '');
+const gameCell = (g, extra = '') => `<div class="gm"><div class="th">${thumb(g)}</div><div class="gn"><a href="https://store.steampowered.com/app/${g.id}" data-open>${esc(g.name)}</a>${g.type === 4 ? '<span class="badge" style="width:max-content;margin:0">DLC</span>' : ''}${famBadge(g)}${extra}</div></div>`;
 
 function rowHtml(g) {
   return `<tr><td style="width:34px">${starBtn(g)}</td><td>${gameCell(g, `<div class="tags">${g.tags.map((t, i) => chip(g, t, i)).join('')}</div>`)}</td>
@@ -221,7 +233,7 @@ async function openSettings() {
   const cache = await api.cacheInfo().catch(() => ({ files: 0, bytes: 0 }));
   const r = await modal(`<h2>Settings</h2>
  <label>Store country (prices & currency, 2-letter code)<input type="text" id="s-cc" value="${esc(s.country)}" maxlength="2"></label>
- <label class="ck"><input type="checkbox" id="s-fam"${s.excludeFamily ? ' checked' : ''}> Exclude games already in my Steam Family library</label>
+ <label class="ck"><input type="checkbox" id="s-fam"${s.useFamily ? ' checked' : ''}> Read my Steam Family library (adds 👪 badges and a Family filter on the Wishlist tab)</label>
  <div class="row"><button class="btn" id="s-login">${s.hasToken ? 'Re-sign in to Steam' : 'Sign in to Steam to read family library'}</button>${s.hasToken ? '<button class="btn" id="s-logout">Sign out</button><span class="sm">signed in (token lasts ~24h)</span>' : ''}</div>
  <label>…or list family members' profiles (usernames or URLs, one per line; their game details must be public)<textarea id="s-mem">${esc(s.familyMembers)}</textarea></label>
  <label>Steam Web API key (optional, reads private-ish libraries more reliably)<input type="text" id="s-key" value="${esc(s.apiKey)}" autocomplete="off"></label>
@@ -240,7 +252,7 @@ async function openSettings() {
   });
   if (r !== 'ok') return;
   const v = (id) => dlg.querySelector(id);
-  await api.setSettings({ country: v('#s-cc').value, excludeFamily: v('#s-fam').checked, familyMembers: v('#s-mem').value, apiKey: v('#s-key').value.trim(), slowness: v('#s-slow').value });
+  await api.setSettings({ country: v('#s-cc').value, useFamily: v('#s-fam').checked, familyMembers: v('#s-mem').value, apiKey: v('#s-key').value.trim(), slowness: v('#s-slow').value });
   if (SW.st.profile) await api.setWhys(v('#s-why').value.split('\n'));
 }
 
@@ -310,24 +322,38 @@ seg('#scope', 'scope', () => { S.page = 0; renderList(); });
 let tm; const deb = (f) => { clearTimeout(tm); tm = setTimeout(f, 150); };
 $('#tq').oninput = (e) => { S.tq = e.target.value; renderTagList(); };
 $('#q').oninput = (e) => { S.q = e.target.value.trim().toLowerCase(); S.page = 0; deb(renderList); };
+$('#ffam').onchange = (e) => { S.fam = e.target.value; setPref('fam', S.fam); S.page = 0; renderTab(); };
 for (const [id, key] of [['#ft', 'type'], ['#fs', 'sale'], ['#fr', 'rel'], ['#fl', 'lst']]) $(id).onchange = (e) => { S[key] = e.target.value; S.page = 0; renderList(); };
 $('#prev').onclick = () => { S.page--; renderList(); };
 $('#next').onclick = () => { S.page++; renderList(); window.scrollTo(0, 0); };
 $('#reset').onclick = () => {
-  S.sel.clear(); S.q = ''; S.type = S.sale = S.rel = S.lst = 'all'; S.mode = 'and'; S.scope = 'all'; S.tq = ''; S.page = 0;
+  S.sel.clear(); S.q = ''; S.type = S.sale = S.rel = S.lst = S.fam = 'all'; setPref('fam', 'all'); if (!$('#ffam').hidden) $('#ffam').value = 'all'; S.mode = 'and'; S.scope = 'all'; S.tq = ''; S.page = 0;
   $('#q').value = ''; $('#tq').value = ''; for (const id of ['#ft', '#fs', '#fr', '#fl']) $(id).value = 'all'; syncSeg(); renderList();
 };
 
 // ---- chrome (header, progress, tabs) ---------------------------------------------------------
+function renderFamilyFilter() {
+  const el = $('#ffam'), st = SW.st;
+  el.hidden = !(st.settings.useFamily && st.profile && st.profile.familyKnown);
+  if (el.hidden) { S.fam = 'all'; return; }
+  const names = st.profile.familyNames || {};
+  const owners = new Set(SW.games.flatMap((g) => g.fam || []));
+  el.innerHTML = '<option value="all">Family: show all</option><option value="hide">Hide family-owned</option><option value="only">Only family-owned</option>' +
+    [...owners].filter((id) => id !== '?').map((id) => `<option value="m:${id}">Owned by ${esc(names[id] || id)}</option>`).join('');
+  if (![...el.options].some((o) => o.value === S.fam)) S.fam = 'all';
+  el.value = S.fam;
+}
+
 function renderChrome() {
   const st = SW.st, c = st.counts || {};
   const un = st.unavailable || [];
   const tip = un.slice(0, 25).map((g) => g.name || 'App ' + g.id).join('\n') + (un.length > 25 ? `\n… and ${un.length - 25} more` : '');
   $('#stats').innerHTML = st.profile
     ? esc(`${st.profile.name} · ${SW.games.length.toLocaleString()} wishlisted titles · ${Object.keys(st.tags).length} tags` +
-      (c.hiddenOwned ? ` · ${c.hiddenOwned} owned hidden` : '') + (c.hiddenFamily ? ` · ${c.hiddenFamily} in family library hidden` : '') + (c.pending ? ` · ${c.pending} pending` : '')) +
+      (c.hiddenOwned ? ` · ${c.hiddenOwned} owned hidden` : '') + (c.familyOwned ? ` · ${c.familyOwned} in family library` : '') + (c.pending ? ` · ${c.pending} pending` : '')) +
       (c.unavailable ? ` · <a href="#" id="unavail" class="statlink" title="${esc(tip)}">${c.unavailable} unavailable on Steam</a>` : '')
     : 'No profile loaded';
+  renderFamilyFilter();
   if (document.activeElement !== $('#user')) $('#user').value = st.settings.username || '';
   $('#legend').innerHTML = CATN.map((n, i) => `<span class="it"><i class="sw" style="background:var(--c${i})"></i>${n}</span>`).join('') +
     '<span class="it"><span class="tg sh k1" style="cursor:default">solid</span>shown on Steam</span><span class="it"><span class="tg ex k1" style="cursor:default">outline</span>extra tag</span>';

@@ -52,15 +52,34 @@ test('owned games are cleared from wishlist and buying list', async () => {
   assert.deepEqual(st.list.map((i) => i.appid), [1]);
 });
 
-test('family exclusion via listed members', async () => {
-  const e = mk(fakeSteam(), { excludeFamily: true, familyMembers: 'bob' });
+test('family library: owners are tracked per game and shown, never hidden', async () => {
+  const e = mk(fakeSteam(), { useFamily: true, familyMembers: 'bob' });
   await e.sync();
-  const ids = e.getState().games.map((g) => g.id);
-  assert.ok(!ids.includes(3));
-  e.setSettings({ excludeFamily: false });
-  assert.equal(e.getState().counts.pending, 1, 'never fetched, so pending until next sync');
+  const st = e.getState();
+  const g3 = st.games.find((g) => g.id === 3);
+  assert.ok(g3, 'family-owned games stay visible (the UI filters them)');
+  assert.deepEqual(g3.fam, ['76561190000000002']);
+  assert.equal(st.profile.familyNames['76561190000000002'], 'bob');
+  assert.deepEqual(st.games.find((g) => g.id === 1).fam, []);
+  assert.equal(st.counts.familyOwned, 1);
+});
+
+test('family library via signed-in token reports owners and skips your own games', async () => {
+  const s = fakeSteam();
+  s.getFamilyLibrary = async () => [{ appid: 1, owners: ['76561190000000001'] }, { appid: 2, owners: ['76561190000000001', '76561190000000009'] }];
+  const e = mk(s, { useFamily: true, familyToken: 'tok', familyTokenAt: Date.now() });
   await e.sync();
-  assert.ok(e.getState().games.some((g) => g.id === 3));
+  const st = e.getState();
+  assert.deepEqual(st.games.find((g) => g.id === 1).fam, []);
+  assert.deepEqual(st.games.find((g) => g.id === 2).fam, ['76561190000000009']);
+});
+
+test('old excludeFamily setting migrates to useFamily', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sw-'));
+  fs.writeFileSync(path.join(dir, 'settings.json'), JSON.stringify({ username: 'a', excludeFamily: true }));
+  const e = new Engine({ dir, steam: fakeSteam(), steamdb: null });
+  assert.equal(e.settings.useFamily, true);
+  assert.equal('excludeFamily' in e.settings, false);
 });
 
 test('why reasons persist per list item', async () => {

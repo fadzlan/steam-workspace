@@ -58,3 +58,5 @@ table.mine textarea.note{width:100%;min-height:86px;resize:vertical;background:v
 
 .th{position:relative}
 .hovervid{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000}
+
+.famb{display:inline-block;width:max-content;max-width:100%;font-size:11px;color:var(--mut);border:1px solid var(--bd);border-radius:10px;padding:0 8px}
