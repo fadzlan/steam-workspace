@@ -438,3 +438,93 @@ test('Firecrawl fetchApp uses the saved history method and adds the lowest-ever 
   assert.deepEqual([r.history, r.low, r.allTime], [null, 5970, true]);
   setFetch((...a) => fetch(...a));
 });
+
+test('Steam micro-trailer URL is read from the store item', () => {
+  const { microtrailerUrl, normalizeItem } = require('../src/main/steam');
+  const it = { success: 1, appid: 7, name: 'X', trailers: { highlights: [{ trailer_url_format: 'steam/apps/${FILENAME}?t=1724909804', microtrailer: [{ filename: '7/1/abc/9/microtrailer.mp4', type: 'video/mp4' }, { filename: '7/1/abc/9/microtrailer.webm', type: 'video/webm' }] }] } };
+  assert.equal(microtrailerUrl(it), 'https://video.fastly.steamstatic.com/store_trailers/7/1/abc/9/microtrailer.webm?t=1724909804');
+  assert.equal(normalizeItem(it).mt, microtrailerUrl(it));
+  assert.equal(microtrailerUrl({ success: 1 }), '');
+});
+
+function fakeImages(cached = []) {
+  const got = [];
+  return { got, hasCached: (k, id) => cached.includes(id), get: async (k, id) => { got.push(id); return id === 3 ? null : '/tmp/x'; } };
+}
+async function previewEngine(mode, cached) {
+  const s = fakeSteam();
+  s.getItems = async (ids) => ids.map((id) => ({ id, name: 'G' + id, tagids: [], disc: 0, orig: 100, fin: 100, st: 0, at: Date.now(), mt: id === 4 ? '' : `https://video/${id}.webm` }));
+  const e = mk(s, { previewDownload: mode });
+  e.images = fakeImages(cached);
+  await e.sync();
+  return e;
+}
+
+test('hover previews: saved for every game at Sync, downloaded for My list / everything / nothing', async () => {
+  let e = await previewEngine('mine', []);
+  assert.equal(e.hoverUrl(1), 'https://video/1.webm');
+  assert.ok(e.getState().games.find((g) => g.id === 1).gif);
+  assert.ok(!e.getState().games.find((g) => g.id === 4).gif, 'no trailer, no preview');
+  assert.deepEqual(e.images.got, [], 'My list is empty: nothing to download');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sw-'));
+  const s = fakeSteam();
+  s.getItems = async (ids) => ids.map((id) => ({ id, name: 'G' + id, tagids: [], disc: 0, orig: 100, fin: 100, st: 0, at: Date.now(), mt: `https://video/${id}.webm` }));
+  e = new Engine({ dir, steam: s, steamdb: null });
+  e.setSettings({ username: 'alice', previewDownload: 'mine' });
+  e.images = fakeImages([]);
+  await e.sync();
+  e.listAdd(1); e.listAdd(2);
+  await e.sync();
+  assert.deepEqual(e.images.got, [1, 2]);
+  e.images = fakeImages([1]);
+  await e.sync();
+  assert.deepEqual(e.images.got, [2], 'already cached previews are skipped');
+  e.setSettings({ previewDownload: 'all' });
+  e.images = fakeImages([]);
+  await e.sync();
+  assert.deepEqual(e.images.got.sort(), [1, 2, 3, 4]);
+  e.setSettings({ previewDownload: 'off' });
+  e.images = fakeImages([]);
+  await e.sync();
+  assert.deepEqual(e.images.got, []);
+});
+
+test('failures are logged: image downloads (final and recovered), network errors, Firecrawl errors', async () => {
+  const fs2 = require('fs');
+  const log = require('../src/main/log');
+  const { Images } = require('../src/main/images');
+  const { setFetch, get } = require('../src/main/http');
+  const dir = fs2.mkdtempSync(path.join(os.tmpdir(), 'swlog-'));
+  log.init(dir);
+  const logText = () => fs2.readFileSync(path.join(dir, 'app.log'), 'utf8');
+  setFetch(async (url) => (url.includes('good') ? new Response(Buffer.from('x'), { status: 200 }) : new Response('', { status: 404 })));
+  const img = new Images(fs2.mkdtempSync(path.join(os.tmpdir(), 'swi-')), new Throttle(() => 0), (id) => `https://video.example/${String(id) === '9' ? 'good' : 'bad'}.webm`);
+  assert.equal(await img.get('hover', 5), null);
+  assert.match(logText(), /WARN\s+hover 5: download failed \(default: HTTP 404 video\.example/);
+  assert.ok(await img.get('hover', 9));
+  setFetch(async () => { throw new Error('ECONNRESET'); });
+  await assert.rejects(() => get(new Throttle(() => 0), 'https://api.example/x/y', { host: 'api.example', minMs: 0 }));
+  assert.match(logText(), /network error api\.example\/x\/y: ECONNRESET/);
+  const { Firecrawl } = require('../src/main/firecrawl');
+  setFetch(async () => new Response(JSON.stringify({ success: false, error: 'Bad' }), { status: 500 }));
+  await assert.rejects(() => new Firecrawl(new Throttle(() => 0), () => 'fc-abcdefgh1234').scrape('https://steamdb.info/app/1/'));
+  assert.match(logText(), /Firecrawl 500 for \/app\/1\/: Firecrawl error 500: Bad/);
+  assert.ok(!/fc-abcdefgh1234/.test(logText()), 'key never logged');
+  setFetch((...a) => fetch(...a));
+});
+
+test('range responses for the cache protocol', () => {
+  const { serveBuffer } = require('../src/main/range');
+  const buf = Buffer.from('0123456789');
+  let r = serveBuffer(buf, 'video/webm', null);
+  assert.deepEqual([r.status, r.headers['content-length'], r.headers['accept-ranges']], [200, '10', 'bytes']);
+  r = serveBuffer(buf, 'video/webm', 'bytes=2-4');
+  assert.deepEqual([r.status, r.headers['content-range'], r.body.toString()], [206, 'bytes 2-4/10', '234']);
+  r = serveBuffer(buf, 'video/webm', 'bytes=0-');
+  assert.deepEqual([r.status, r.headers['content-range'], r.body.length], [206, 'bytes 0-9/10', 10]);
+  r = serveBuffer(buf, 'video/webm', 'bytes=-3');
+  assert.equal(r.body.toString(), '789');
+  r = serveBuffer(buf, 'video/webm', 'bytes=0-999');
+  assert.equal(r.headers['content-range'], 'bytes 0-9/10');
+  assert.equal(serveBuffer(buf, 'video/webm', 'bytes=50-60').status, 416);
+});

@@ -11,18 +11,24 @@ const setFetch = (f) => { fetchImpl = f; };
 // One un-retried request through the current fetch (used for POSTs to third-party APIs).
 const fetchNow = (url, opts) => fetchImpl(url, opts);
 
-async function get(throttle, url, { host, minMs, type = 'json', headers = {}, signal, retries = 4 } = {}) {
+async function get(throttle, url, { host, minMs, type = 'json', headers = {}, signal, retries = 4, quiet = [] } = {}) {
   host = host || new URL(url).host;
   let attempt = 0;
   for (;;) {
-    const res = await throttle.run(host, minMs, () => fetchImpl(url, { headers: { 'user-agent': UA, ...headers }, signal }), signal);
+    let res;
+    try {
+      res = await throttle.run(host, minMs, () => fetchImpl(url, { headers: { 'user-agent': UA, ...headers }, signal }), signal);
+    } catch (e) {
+      if (!(signal && signal.aborted) && e.message !== 'cancelled') log.warn(`network error ${host}${new URL(url).pathname}: ${e.message}`);
+      throw e;
+    }
     if (res.ok) {
       if (type === 'json') return res.json();
       if (type === 'buffer') return Buffer.from(await res.arrayBuffer());
       return res.text();
     }
     const retryable = res.status === 429 || res.status >= 500;
-    if (res.status !== 404) log.warn(`HTTP ${res.status} ${host}${new URL(url).pathname} (attempt ${attempt + 1}${retryable && attempt < retries ? ', will retry' : ''})`);
+    if (!quiet.includes(res.status)) log.warn(`HTTP ${res.status} ${host}${new URL(url).pathname} (attempt ${attempt + 1}${retryable && attempt < retries ? ', will retry' : ''})`);
     if (!retryable || attempt >= retries) {
       const err = new Error(`HTTP ${res.status} for ${host}`);
       err.status = res.status;

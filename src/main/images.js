@@ -54,29 +54,47 @@ class Images {
     return this.inflight.get(key);
   }
 
+  // -> {file} or {err}. 404s are expected while guessing URLs, so only the final outcome is logged (see _download).
   async _try(url, kind, id) {
     try {
-      const buf = await get(this.t, url, { host: new URL(url).host, minMs: 300, type: 'buffer', retries: 2 });
+      const buf = await get(this.t, url, { host: new URL(url).host, minMs: 300, type: 'buffer', retries: 2, quiet: [404] });
       const ext = (path.extname(new URL(url).pathname) || '.jpg').toLowerCase();
       const dir = path.join(this.dir, kind);
       fs.mkdirSync(dir, { recursive: true });
       const file = path.join(dir, id + ext);
       fs.writeFileSync(file, buf);
-      return file;
-    } catch (_) {
-      return null;
+      return { file };
+    } catch (e) {
+      return { err: e.status ? `HTTP ${e.status}` : e.message };
     }
   }
 
+  hasCached(kind, id) { return !!this._existing(kind, String(id)); }
+
   async _download(kind, id) {
-    const tryAll = async (urls) => { for (const url of urls) { if (!url) continue; const f = await this._try(url, kind, id); if (f) return f; } return null; };
+    const attempts = [];
+    const short = (u) => { const x = new URL(u); return x.host + x.pathname.replace(/^(.{0,60}).*(.{25})$/, '$1…$2'); };
+    const tryAll = async (urls, label) => {
+      for (const url of urls) {
+        if (!url) continue;
+        const r = await this._try(url, kind, id);
+        if (r.file) return r.file;
+        attempts.push(`${label} ${r.err} ${short(url)}`);
+      }
+      return null;
+    };
     const pick = (a) => (a ? (kind === 'thumb' ? [a.thumb, a.header] : [a.header]) : []);
     const isImage = kind === 'thumb' || kind === 'header';
     // 1. URLs the store API already told us (newer games use hashed paths), 2. the legacy path, 3. ask the API now
-    let f = isImage ? await tryAll(pick(this.peekAssets(Number(id)))) : null;
-    if (!f) f = await tryAll(this._candidates(kind, id));
-    if (!f && isImage) f = await tryAll(pick(await this.resolveAssets(Number(id)).catch(() => null)));
-    if (!f) { this.failed.set(kind + id, Date.now()); if (isImage) log.warn(`no ${kind} image found for app ${id}`); }
+    let f = isImage ? await tryAll(pick(this.peekAssets(Number(id))), 'known:') : null;
+    if (!f) f = await tryAll(this._candidates(kind, id), 'default:');
+    if (!f && isImage) f = await tryAll(pick(await this.resolveAssets(Number(id)).catch(() => null)), 'store API:');
+    if (f) {
+      if (attempts.length) log.info(`${kind} ${id}: ok after ${attempts.length} failed attempt(s): ${attempts.join('; ')}`);
+    } else {
+      this.failed.set(kind + id, Date.now());
+      log.warn(`${kind} ${id}: download failed (${attempts.join('; ') || 'no URL known'})`);
+    }
     return f;
   }
 

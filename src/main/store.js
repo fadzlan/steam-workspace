@@ -1,6 +1,7 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
+const log = require('./log');
 
 // Tiny JSON file store with debounced, atomic writes.
 class JsonFile {
@@ -22,7 +23,7 @@ class JsonFile {
         fs.writeFileSync(tmp, JSON.stringify(this.data));
         fs.renameSync(tmp, this.file);
       } catch (e) {
-        console.error('save failed', this.file, e);
+        log.error(`could not save ${path.basename(this.file)}: ${e.message}`);
       }
     };
     if (now) write();

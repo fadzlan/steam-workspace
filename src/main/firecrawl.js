@@ -33,17 +33,25 @@ class Firecrawl {
   async scrape(url, { headers, formats = ['rawHtml'], actions, signal } = {}) {
     const key = this.getKey();
     if (!key) throw Object.assign(new Error('No Firecrawl API key set (Settings).'), { fatal: true });
-    const res = await this.t.run(HOST, 1500, () => http.fetchNow(`https://${HOST}/v2/scrape`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url, formats, headers, actions, maxAge: 0 }),
-      signal,
-    }), signal);
-    if (res.status === 401 || res.status === 403) throw Object.assign(new Error('Firecrawl rejected the API key (check Settings).'), { fatal: true });
-    if (res.status === 402) throw Object.assign(new Error('Firecrawl account is out of credits.'), { fatal: true });
-    if (res.status === 429) { this.t.penalize(HOST, 30000); throw new Error('Firecrawl rate limit reached, try again shortly.'); }
+    const where = (() => { try { return new URL(url).pathname; } catch (_) { return url; } })();
+    let res;
+    try {
+      res = await this.t.run(HOST, 1500, () => http.fetchNow(`https://${HOST}/v2/scrape`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url, formats, headers, actions, maxAge: 0 }),
+        signal,
+      }), signal);
+    } catch (e) {
+      if (!(signal && signal.aborted) && e.message !== 'cancelled') log.warn(`Firecrawl network error for ${where}: ${e.message}`);
+      throw e;
+    }
+    const fail = (msg, extra = {}) => { log.warn(`Firecrawl ${res.status} for ${where}: ${msg}`); return Object.assign(new Error(msg), extra); };
+    if (res.status === 401 || res.status === 403) throw fail('Firecrawl rejected the API key (check Settings).', { fatal: true });
+    if (res.status === 402) throw fail('Firecrawl account is out of credits.', { fatal: true });
+    if (res.status === 429) { this.t.penalize(HOST, 30000); throw fail('Firecrawl rate limit reached, try again shortly.'); }
     const j = await res.json().catch(() => null);
-    if (!res.ok || !j || j.success === false) throw new Error(`Firecrawl error ${res.status}${j && j.error ? ': ' + j.error : ''}`);
+    if (!res.ok || !j || j.success === false) throw fail(`Firecrawl error ${res.status}${j && j.error ? ': ' + j.error : ''}`);
     const d = j.data || {};
     const js = (d.actions && d.actions.javascriptReturns) || [];
     return { text: d.rawHtml || d.html || d.markdown || '', status: (d.metadata && d.metadata.statusCode) || 200, js: js.map((x) => x && x.value) };

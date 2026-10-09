@@ -11,6 +11,7 @@ const { Firecrawl } = require('./firecrawl');
 const { Engine } = require('./engine');
 const { Images, EXT_MIME } = require('./images');
 const log = require('./log');
+const { serveBuffer } = require('./range');
 
 protocol.registerSchemesAsPrivileged([{ scheme: 'swimg', privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
 
@@ -28,6 +29,7 @@ function createEngine() {
   engine = new Engine({ dir, steam: new Steam(throttle), steamdb: new SteamDB(throttle), firecrawl: new Firecrawl(throttle, () => engine && engine.settings.firecrawlKey), emit: (k) => send(k) });
   engine.steamdb.onStatus = (m) => win && !win.isDestroyed() && win.webContents.send('hint', m);
   images = new Images(path.join(dir, 'images'), throttle, (id) => engine.hoverUrl(id), (id) => engine.assetUrls(id), (id) => engine.peekAssets(id));
+  engine.images = images;
 }
 
 let pushTimer = null;
@@ -39,17 +41,14 @@ function send(kind) {
 }
 
 // swimg://thumb/123  ->  cached (or lazily, slowly downloaded) image; swimg://hover/123 -> preview video.
-// Served through net.fetch(file://) so <video> gets Range support.
+// Videos need real HTTP Range support (206 + Content-Range), or Chromium refuses anything beyond a few hundred KB.
 function registerImageProtocol() {
   protocol.handle('swimg', async (req) => {
     const u = new URL(req.url);
     const file = await images.get(u.hostname, u.pathname.slice(1));
     if (!file) return new Response('', { status: 404 });
-    const res = await net.fetch(pathToFileURL(file).toString(), { headers: req.headers });
-    const headers = new Headers(res.headers);
-    headers.set('content-type', EXT_MIME[path.extname(file)] || 'application/octet-stream');
-    headers.set('cache-control', 'max-age=31536000');
-    return new Response(res.body, { status: res.status, headers });
+    const r = serveBuffer(fs.readFileSync(file), EXT_MIME[path.extname(file)] || 'application/octet-stream', req.headers.get('range'));
+    return new Response(r.body, { status: r.status, headers: r.headers });
   });
 }
 
@@ -69,36 +68,36 @@ async function steamLogin() {
   return true;
 }
 
-function wrap(fn) {
+function wrap(name, fn) {
   return async (_e, ...a) => {
-    try { return { ok: true, value: await fn(...a) }; } catch (e) { return { ok: false, error: e.message }; }
+    try { return { ok: true, value: await fn(...a) }; } catch (e) { log.warn(`${name} failed: ${e.message}`); return { ok: false, error: e.message }; }
   };
 }
 
 function registerIpc() {
-  ipcMain.handle('state', wrap(() => engine.getState()));
-  ipcMain.handle('settings', wrap((p) => engine.setSettings(p)));
-  ipcMain.handle('sync', wrap((mode) => engine.sync(mode)));
-  ipcMain.handle('cancel', wrap(() => engine.cancel()));
-  ipcMain.handle('list:add', wrap((id) => engine.listAdd(id)));
-  ipcMain.handle('list:remove', wrap((id) => engine.listRemove(id)));
-  ipcMain.handle('list:set', wrap((id, p) => engine.listSet(id, p)));
-  ipcMain.handle('whys', wrap((arr) => engine.setWhys(arr)));
-  ipcMain.handle('bg:start', wrap((scope) => engine.bgStart(scope)));
-  ipcMain.handle('bg:stop', wrap(() => engine.bgStop()));
-  ipcMain.handle('firecrawl:test', wrap(() => engine.firecrawl.test()));
-  ipcMain.handle('firecrawl:probe', wrap(async () => { const r = await engine.firecrawl.probe(engine.settings.country.toLowerCase()); engine.setSettings({ fcHistoryMode: r.mode }); return r; }));
-  ipcMain.handle('steamdb:fetch', wrap((id) => engine.fetchSteamDb(id)));
-  ipcMain.handle('steamdb:check', wrap(() => engine.steamdb.showChallenge()));
-  ipcMain.handle('steam:login', wrap(steamLogin));
-  ipcMain.handle('steam:logout', wrap(async () => {
+  ipcMain.handle('state', wrap('state', () => engine.getState()));
+  ipcMain.handle('settings', wrap('settings', (p) => engine.setSettings(p)));
+  ipcMain.handle('sync', wrap('sync', (mode) => engine.sync(mode)));
+  ipcMain.handle('cancel', wrap('cancel', () => engine.cancel()));
+  ipcMain.handle('list:add', wrap('list:add', (id) => engine.listAdd(id)));
+  ipcMain.handle('list:remove', wrap('list:remove', (id) => engine.listRemove(id)));
+  ipcMain.handle('list:set', wrap('list:set', (id, p) => engine.listSet(id, p)));
+  ipcMain.handle('whys', wrap('whys', (arr) => engine.setWhys(arr)));
+  ipcMain.handle('bg:start', wrap('bg:start', (scope) => engine.bgStart(scope)));
+  ipcMain.handle('bg:stop', wrap('bg:stop', () => engine.bgStop()));
+  ipcMain.handle('firecrawl:test', wrap('firecrawl:test', () => engine.firecrawl.test()));
+  ipcMain.handle('firecrawl:probe', wrap('firecrawl:probe', async () => { const r = await engine.firecrawl.probe(engine.settings.country.toLowerCase()); engine.setSettings({ fcHistoryMode: r.mode }); return r; }));
+  ipcMain.handle('steamdb:fetch', wrap('steamdb:fetch', (id) => engine.fetchSteamDb(id)));
+  ipcMain.handle('steamdb:check', wrap('steamdb:check', () => engine.steamdb.showChallenge()));
+  ipcMain.handle('steam:login', wrap('steam:login', steamLogin));
+  ipcMain.handle('steam:logout', wrap('steam:logout', async () => {
     await session.fromPartition('persist:steamlogin').clearStorageData();
     engine.setSettings({ familyToken: null, familyTokenAt: 0 });
   }));
-  ipcMain.handle('log:open', wrap(async () => { const d = log.dir(); if (!d) throw new Error('Log not available'); await shell.openPath(d); return d; }));
-  ipcMain.handle('cache:info', wrap(() => images.size()));
-  ipcMain.handle('cache:clear', wrap(() => { images.clear(); }));
-  ipcMain.handle('open', wrap((url) => {
+  ipcMain.handle('log:open', wrap('log:open', async () => { const d = log.dir(); if (!d) throw new Error('Log not available'); await shell.openPath(d); return d; }));
+  ipcMain.handle('cache:info', wrap('cache:info', () => images.size()));
+  ipcMain.handle('cache:clear', wrap('cache:clear', () => { images.clear(); }));
+  ipcMain.handle('open', wrap('open', (url) => {
     if (!/^https:\/\/(store\.steampowered\.com|steamdb\.info|steamcommunity\.com)\//.test(url)) throw new Error('blocked');
     return shell.openExternal(url);
   }));

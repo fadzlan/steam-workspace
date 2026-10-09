@@ -310,6 +310,7 @@ async function openSettings() {
  <div class="row"><button class="btn" id="s-login">${s.hasToken ? 'Re-sign in to Steam' : 'Sign in to Steam (reads your library and family library)'}</button>${s.hasToken ? '<button class="btn" id="s-logout">Sign out</button><span class="sm">signed in (token lasts ~24h)</span>' : ''}</div>
  <label>…or list family members' profiles (usernames or URLs, one per line; their game details must be public)<textarea id="s-mem">${esc(s.familyMembers)}</textarea></label>
  <label>Steam Web API key (optional: an alternative to signing in for reading your library; free at steamcommunity.com/dev/apikey)<input type="text" id="s-key" value="${esc(s.apiKey)}" autocomplete="off"></label>
+ <label>Hover previews: download during Sync (about 2.5 MB each, from Steam)<select id="s-prev"><option value="mine"${s.previewDownload === 'mine' ? ' selected' : ''}>My list only</option><option value="all"${s.previewDownload === 'all' ? ' selected' : ''}>Whole wishlist (can be several GB)</option><option value="off"${s.previewDownload === 'off' ? ' selected' : ''}>Off: download when hovered</option></select></label>
  <label>Firecrawl API key (optional, replaces the SteamDB browser window)<input type="text" id="s-fc" value="${esc(s.firecrawlKey || '')}" autocomplete="off" placeholder="fc-…"></label>
  <label class="ck"><input type="checkbox" id="s-usefc"${s.useFirecrawl ? ' checked' : ''}> Use Firecrawl for SteamDB (no browser window or Cloudflare check; 1 credit per game for the lowest price ever + preview, more if the price graph is enabled below)</label>
  <div class="row"><button class="btn" id="s-fctest">Test Firecrawl</button><span class="sm" id="s-fcres">Uses 1 credit.</span></div>
@@ -341,7 +342,7 @@ async function openSettings() {
   });
   if (r !== 'ok') return;
   const v = (id) => dlg.querySelector(id);
-  await api.setSettings({ country: v('#s-cc').value, useFamily: v('#s-fam').checked, familyMembers: v('#s-mem').value, apiKey: v('#s-key').value.trim(), firecrawlKey: v('#s-fc').value.trim(), useFirecrawl: v('#s-usefc').checked, slowness: v('#s-slow').value });
+  await api.setSettings({ country: v('#s-cc').value, useFamily: v('#s-fam').checked, familyMembers: v('#s-mem').value, apiKey: v('#s-key').value.trim(), firecrawlKey: v('#s-fc').value.trim(), previewDownload: v('#s-prev').value, useFirecrawl: v('#s-usefc').checked, slowness: v('#s-slow').value });
   if (SW.st.profile) await api.setWhys(v('#s-why').value.split('\n'));
 }
 

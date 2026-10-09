@@ -6,7 +6,7 @@ const { assetUrl } = require('./steam');
 
 const DAY = 864e5;
 const DEFAULT_WHYS = ['Great price', 'Wanted for a long time', 'Friends play it', 'Highly rated', 'Genre I love', 'Near historical low', 'Good for the family'];
-const DEFAULT_SETTINGS = { username: '', country: 'MY', useFamily: false, familyMembers: '', apiKey: '', firecrawlKey: '', useFirecrawl: false, fcHistoryMode: '', slowness: 1, familyToken: null, familyTokenAt: 0 };
+const DEFAULT_SETTINGS = { username: '', country: 'MY', useFamily: false, familyMembers: '', apiKey: '', firecrawlKey: '', useFirecrawl: false, fcHistoryMode: '', previewDownload: 'mine', slowness: 1, familyToken: null, familyTokenAt: 0 };
 const BATCH = 25;
 
 // Everything stateful and network-driven lives here; electron-specific bits are injected
@@ -16,6 +16,7 @@ class Engine {
     this.steam = steam;
     this.steamdb = steamdb;
     this.firecrawl = firecrawl || null;
+    this.images = null; // set by main: used to download hover previews during Sync
     this.emit = emit || (() => {});
     this.settingsF = new JsonFile(path.join(dir, 'settings.json'), DEFAULT_SETTINGS);
     if (this.settingsF.data.excludeFamily) this.settingsF.data.useFamily = true; // old name of the option
@@ -55,7 +56,7 @@ class Engine {
       if (!a || !a.name) { pending++; continue; }
       const fam = famOwners[w.appid] || (famLegacy.has(w.appid) ? ['?'] : []); // steamids of family members who own it
       if (fam.length) familyOwned++;
-      out.games.push({ ...a, added: w.added, db: undefined, hasDb: !!a.db, gif: !!(a.db && a.db.gif), fam });
+      out.games.push({ ...a, added: w.added, db: undefined, hasDb: !!a.db, gif: !!(a.mt || (a.db && a.db.gif)), fam });
     }
     out.profile = { steamid: u.steamid, name: u.name, ownedKnown: u.owned != null, familyKnown: u.family != null, familyAt: u.familyAt || 0, familyNames: u.familyNames || {}, syncedAt: u.syncedAt || 0 };
     out.unavailable = gone;
@@ -110,7 +111,8 @@ class Engine {
   }
 
   getDb(appid) { return (this.apps[appid] || {}).db || null; }
-  hoverUrl(appid) { const db = this.getDb(appid); return db && db.gif; }
+  // Steam's own micro-trailer (saved at Sync for every game), else the one SteamDB listed.
+  hoverUrl(appid) { const a = this.apps[appid]; return (a && (a.mt || (a.db && a.db.gif))) || null; }
 
   setSettings(patch) {
     const keys = Object.keys(DEFAULT_SETTINGS);
@@ -162,6 +164,7 @@ class Engine {
     try {
       await this._syncProfile(signal, result);
       await this._syncDetails(mode, signal);
+      await this._syncPreviews(signal);
       await this._syncSteamDb(signal);
       this.user().syncedAt = Date.now();
       this._progress('done', 'Up to date.');
@@ -308,6 +311,23 @@ class Engine {
     this.emit('state');
   }
 
+  // Hover previews (about 2.5 MB each, from Steam's video server) are downloaded for My list, the whole
+  // wishlist, or not at all (then on first hover), depending on Settings.
+  async _syncPreviews(signal) {
+    const mode = this.settings.previewDownload;
+    if (!this.images || mode === 'off') return;
+    const u = this.user();
+    const ids = mode === 'all' ? this.getState().games.map((g) => g.id) : u.list.map((i) => i.appid);
+    const todo = ids.filter((id) => this.hoverUrl(id) && !this.images.hasCached('hover', id));
+    let done = 0, failed = 0;
+    for (const id of todo) {
+      if (signal.aborted) throw new Error('cancelled');
+      this._progress('previews', `Downloading hover previews (${done + failed}/${todo.length})…`, done + failed, todo.length);
+      (await this.images.get('hover', id)) ? done++ : failed++;
+    }
+    if (todo.length) log.info(`hover previews: ${done} downloaded, ${failed} failed, of ${todo.length} (mode ${mode})`);
+  }
+
   async _syncSteamDb(signal) {
     const u = this.user();
     if (!this.steamdb) return;
@@ -330,7 +350,13 @@ class Engine {
     if (!a) throw new Error('Unknown game');
     const src = this._useFirecrawl() ? this.firecrawl : this.steamdb;
     if (!src) throw new Error('SteamDB is not available.');
-    const r = await src.fetchApp(appid, this.settings.country.toLowerCase(), signal, { price: a.fFin, fin: a.fin, mode: this.settings.fcHistoryMode });
+    let r;
+    try {
+      r = await src.fetchApp(appid, this.settings.country.toLowerCase(), signal, { price: a.fFin, fin: a.fin, mode: this.settings.fcHistoryMode });
+    } catch (e) {
+      if (!(signal && signal.aborted)) log.warn(`SteamDB load failed for ${a.name} (${appid}): ${e.message}`);
+      throw e;
+    }
     if (a.fin > 0) { // a lowest price cannot be above today's price
       if (r.low != null) r.low = Math.min(r.low, a.fin);
       if (r.allTimeLow != null) r.allTimeLow = Math.min(r.allTimeLow, a.fin);

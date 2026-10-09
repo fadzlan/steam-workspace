@@ -80,12 +80,22 @@ class Steam {
     const input = {
       ids: appids.map((appid) => ({ appid })),
       context: { language: 'english', country_code: country },
-      data_request: { include_assets: true, include_release: true, include_tag_count: 20, include_reviews: true, include_basic_info: true },
+      data_request: { include_assets: true, include_trailers: true, include_release: true, include_tag_count: 20, include_reviews: true, include_basic_info: true },
     };
     const url = `https://${API}/IStoreBrowseService/GetItems/v1?input_json=${encodeURIComponent(JSON.stringify(input))}`;
     const j = await this._json(url, signal);
     return ((j.response && j.response.store_items) || []).map(normalizeItem);
   }
+}
+
+// Steam's own hover preview (the "micro-trailer" the store shows): a short muted looping video on Steam's video CDN.
+function microtrailerUrl(it) {
+  const hl = it.trailers && it.trailers.highlights && it.trailers.highlights[0];
+  const list = (hl && hl.microtrailer) || [];
+  const f = list.find((x) => /webm/i.test(x.type || x.filename || '')) || list[0];
+  if (!f || !f.filename) return '';
+  const t = /[?&]t=(\d+)/.exec(hl.trailer_url_format || '');
+  return `https://video.fastly.steamstatic.com/store_trailers/${f.filename}${t ? `?t=${t[1]}` : ''}`;
 }
 
 function normalizeItem(it) {
@@ -115,6 +125,7 @@ function normalizeItem(it) {
     pub: names(it.basic_info && it.basic_info.publishers),
     st: soon ? 2 : free ? 1 : 0,
     // newer apps keep images under hashed paths, so remember the real file names
+    mt: microtrailerUrl(it),
     ia: (it.assets && it.assets.asset_url_format) || '',
     isc: (it.assets && it.assets.small_capsule) || '',
     ih: (it.assets && it.assets.header) || '',
@@ -125,4 +136,4 @@ function normalizeItem(it) {
 const ASSET_BASE = 'https://shared.steamstatic.com/store_item_assets/';
 const assetUrl = (a, file) => (a && a.ia && file ? ASSET_BASE + a.ia.replace('${FILENAME}', file) : null);
 
-module.exports = { Steam, normalizeItem, assetUrl };
+module.exports = { Steam, normalizeItem, assetUrl, microtrailerUrl };
