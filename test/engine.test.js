@@ -334,7 +334,13 @@ test('engine prefers Firecrawl when enabled (short pacing) and stops cleanly on 
   await e.sync();
   assert.ok(e.bgDelayMs() < 20000, 'Firecrawl pacing is short');
   e.setSettings({ useFirecrawl: false });
-  assert.ok(e.bgDelayMs() >= 60000, 'browser pacing is 1-2 minutes');
+  const d = e.bgDelayMs();
+  assert.ok(d >= 20000 && d <= 40000, 'browser pacing defaults to 20-40 s');
+  e.setSettings({ bgPace: 'slow' });
+  assert.ok(e.bgDelayMs() >= 60000, 'slow = 1-2 minutes');
+  e.setSettings({ bgPace: 'fast' });
+  assert.ok(e.bgDelayMs() <= 15000, 'fast = 8-15 s');
+  e.setSettings({ bgPace: '' });
   e.setSettings({ useFirecrawl: true });
   e.bgDelayMs = () => 5;
   e.listAdd(1); e.listAdd(2);
@@ -542,4 +548,39 @@ test('games saved before preview addresses existed are refreshed once, even if r
   assert.equal(s.calls.length, 2, 'refetched once');
   await e.sync();
   assert.equal(s.calls.length, 2, 'and not again (mt is now defined)');
+});
+
+test('SteamDB queue order: never loaded, then price changed / sale ended, then the rest (not loaded in the last 5 days); My list and sales first', async () => {
+  const s = fakeSteam({ wishlist: [1, 2, 3, 4, 5, 6, 7] });
+  const e = mk(s);
+  await e.sync();
+  const now = Date.now(), D = 864e5;
+  const set = (id, fields) => Object.assign(e.apps[id], fields);
+  // 1: never loaded, on sale 10%   2: never loaded, no sale   3: price changed since the fetch
+  // 4: loaded 2 days ago, unchanged (skip)   5: loaded 9 days ago, unchanged, on sale   6: sale ended since the fetch   7: loaded 9 days ago, no sale
+  set(1, { disc: 10 }); set(2, { disc: 0 }); set(3, { fin: 500, disc: 20 }); set(4, { fin: 100, disc: 0 }); set(5, { fin: 100, disc: 40 }); set(6, { fin: 100, disc: 0 }); set(7, { fin: 100, disc: 0 });
+  const db = (at, fin, extra = {}) => ({ history: null, low: 100, lowAt: 1, gif: null, at, fin, saleEnd: 0, ...extra });
+  set(3, { db: db(now - 20 * D, 900) });                      // price was 900, now 500: changed
+  set(4, { db: db(now - 2 * D, 100) });
+  set(5, { db: db(now - 9 * D, 100) });
+  set(6, { db: db(now - 20 * D, 100, { saleEnd: Math.floor((now - 3 * D) / 1000) }) });
+  set(7, { db: db(now - 9 * D, 100) });
+  e.listAdd(2); // a list item that was never loaded goes first inside pass 1
+  assert.deepEqual(e.bgQueue('all'), [2, 1, 3, 6, 5, 7]);
+  assert.deepEqual(e.bgQueue('all', 2), [2, 1, 3, 6], 'Sync only does passes 1 and 2');
+  assert.deepEqual(e.bgQueue('sale'), [2, 1, 3, 5], 'sale scope: My list + games on sale');
+  assert.deepEqual(e.bgQueue('mine'), [2]);
+});
+
+test('lowest known SteamDB price is exposed per game, never above today\'s price', async () => {
+  const e = mk(fakeSteam());
+  await e.sync();
+  e.apps[1].fin = 900;
+  e.apps[1].db = { history: null, low: 700, more: true, allTimeLow: 500, at: Date.now() };
+  e.apps[2].db = { history: null, low: 300, allTime: true, at: Date.now() };
+  e.apps[2].fin = 200; // cheaper today than anything recorded
+  const g = (id) => e.getState().games.find((x) => x.id === id);
+  assert.deepEqual([g(1).low, g(1).lowNote], [500, 'lowest ever recorded']);
+  assert.equal(g(2).low, 200);
+  assert.equal(g(3).low, null, 'no SteamDB data, no lowest price');
 });

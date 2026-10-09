@@ -6,11 +6,26 @@ const { assetUrl } = require('./steam');
 
 const DAY = 864e5;
 const DEFAULT_WHYS = ['Great price', 'Wanted for a long time', 'Friends play it', 'Highly rated', 'Genre I love', 'Near historical low', 'Good for the family'];
-const DEFAULT_SETTINGS = { username: '', country: 'MY', useFamily: false, familyMembers: '', apiKey: '', firecrawlKey: '', useFirecrawl: false, fcHistoryMode: '', previewDownload: 'mine', slowness: 1, familyToken: null, familyTokenAt: 0 };
+const DEFAULT_SETTINGS = { username: '', country: 'MY', useFamily: false, familyMembers: '', apiKey: '', firecrawlKey: '', useFirecrawl: false, fcHistoryMode: '', previewDownload: 'mine', bgPace: '', slowness: 1, familyToken: null, familyTokenAt: 0 };
 const BATCH = 25;
+const PACE = { slow: [60000, 120000], medium: [20000, 40000], fast: [8000, 15000] }; // ms between SteamDB games
 
 // Everything stateful and network-driven lives here; electron-specific bits are injected
 // so this can be unit tested with fakes.
+// Lowest price known from SteamDB (2-year history and/or all-time table), never above today's Steam price.
+function lowestOf(a) {
+  const db = a && a.db;
+  if (!db) return null;
+  const cands = [];
+  if (db.low > 0) cands.push([db.low, db.allTime ? 'lowest ever recorded' : db.more ? 'lowest in the last 2 years' : 'lowest recorded']);
+  if (db.allTimeLow > 0) cands.push([db.allTimeLow, 'lowest ever recorded']);
+  if (!cands.length) return null;
+  cands.sort((x, y) => x[0] - y[0]);
+  let [cents, note] = cands[0];
+  if (a.fin > 0 && a.fin < cents) { cents = a.fin; note = 'today (cheaper than anything recorded)'; }
+  return { cents, note };
+}
+
 class Engine {
   constructor({ dir, steam, steamdb, firecrawl, emit }) {
     this.steam = steam;
@@ -26,9 +41,12 @@ class Engine {
     this.status = { running: false, phase: '', done: 0, total: 0, msg: '', warnings: [] };
     this.abort = null;
     this.bg = { running: false };
-    // 1-2 minutes between SteamDB games when we drive a browser against SteamDB ourselves; Firecrawl
-    // requests come from its own infrastructure, so a short pause is enough.
-    this.bgDelayMs = () => (this._useFirecrawl() ? 8000 + Math.random() * 7000 : 60000 + Math.random() * 60000);
+    // Pause between SteamDB games in the background loader. 'auto': ~30 s through the browser window, a few
+    // seconds through Firecrawl (its requests come from Firecrawl's servers, not from this machine).
+    this.bgDelayMs = () => {
+      const [lo, hi] = PACE[this.settings.bgPace] || PACE[this._useFirecrawl() ? 'fast' : 'medium'];
+      return lo + Math.random() * (hi - lo);
+    };
   }
 
   get settings() { return this.settingsF.data; }
@@ -54,9 +72,10 @@ class Engine {
       const a = this.apps[w.appid];
       if (a && a.gone) { unavailable++; gone.push({ id: w.appid, name: a.name || '', added: w.added }); continue; } // Steam returns nothing: delisted, removed or region-locked
       if (!a || !a.name) { pending++; continue; }
+      const lw = lowestOf(a);
       const fam = famOwners[w.appid] || (famLegacy.has(w.appid) ? ['?'] : []); // steamids of family members who own it
       if (fam.length) familyOwned++;
-      out.games.push({ ...a, added: w.added, db: undefined, hasDb: !!a.db, gif: !!(a.mt || (a.db && a.db.gif)), fam });
+      out.games.push({ ...a, added: w.added, db: undefined, hasDb: !!a.db, gif: !!(a.mt || (a.db && a.db.gif)), fam, low: lw && lw.cents, lowNote: lw && lw.note });
     }
     out.profile = { steamid: u.steamid, name: u.name, ownedKnown: u.owned != null, familyKnown: u.family != null, familyAt: u.familyAt || 0, familyNames: u.familyNames || {}, syncedAt: u.syncedAt || 0 };
     out.unavailable = gone;
@@ -329,9 +348,8 @@ class Engine {
   }
 
   async _syncSteamDb(signal) {
-    const u = this.user();
-    if (!this.steamdb) return;
-    const todo = u.list.map((i) => i.appid).filter((id) => { const a = this.apps[id]; return a && a.name && (!a.db || Date.now() - a.db.at > 14 * DAY); });
+    if (!this.steamdb && !this._useFirecrawl()) return;
+    const todo = this.bgQueue('mine', 2); // My list games never loaded, or whose price changed; the long refresh is the background loader's job
     let i = 0;
     for (const id of todo) {
       this._progress('steamdb', `SteamDB history & preview (${i++}/${todo.length})…`, i, todo.length);
@@ -362,7 +380,7 @@ class Engine {
       if (r.allTimeLow != null) r.allTimeLow = Math.min(r.allTimeLow, a.fin);
     }
     if (!r.history && !r.gif && r.low == null) throw Object.assign(new Error('SteamDB returned no price history or preview for this game (see the log for what it sent).'), { noData: true });
-    a.db = { ...r, at: Date.now(), saleEnd: a.end || 0 }; // saleEnd: the sale this data was fetched during (to know when it is stale)
+    a.db = { ...r, at: Date.now(), saleEnd: a.end || 0, fin: a.fin, disc: a.disc || 0 }; // saleEnd: the sale this data was fetched during (to know when it is stale)
     this.appsF.save();
     this.emit('state');
     return a.db;
@@ -371,25 +389,33 @@ class Engine {
   // ---- background SteamDB loader --------------------------------------------------------------------
   // scope: 'mine' (My list), 'sale' (My list, then wishlist games on sale) or 'all' (My list, then the whole wishlist).
   // One game every 1-2 minutes (random), so SteamDB is never hammered. Stops by itself when SteamDB blocks us.
-  _bgNeeds(a) {
-    if (!a || !a.name || a.gone) return false;
-    if (a.dbSkip && Date.now() - a.dbSkip < 7 * DAY) return false; // SteamDB had nothing / failed recently
+  // Which pass a game belongs to (0 = not needed right now):
+  //   1 never loaded from SteamDB
+  //   2 Steam's price changed since the SteamDB data was fetched, or the sale that data came from has ended
+  //   3 everything else, unless it was loaded in the last 5 days
+  _bgTier(a) {
+    if (!a || !a.name || a.gone) return 0;
+    if (a.dbSkip && Date.now() - a.dbSkip < 7 * DAY) return 0; // SteamDB had nothing / failed recently
     const db = a.db;
-    if (!db) return true;
-    const ended = db.saleEnd && Date.now() / 1000 > db.saleEnd && db.at / 1000 < db.saleEnd; // fetched during a sale that is over
-    return !!ended || Date.now() - db.at > 30 * DAY;
+    if (!db) return 1;
+    const ended = db.saleEnd && Date.now() / 1000 > db.saleEnd && db.at / 1000 < db.saleEnd;
+    const changed = db.fin !== undefined && a.fin !== db.fin;
+    if (ended || changed) return 2;
+    return Date.now() - db.at < 5 * DAY ? 0 : 3;
   }
 
-  bgQueue(scope) {
+  /** Ids to load, in order: pass 1, 2, 3; inside a pass My list first, then games on sale (biggest discount), then the rest. */
+  bgQueue(scope, maxTier = 3) {
     const u = this.user();
     if (!u) return [];
-    const mine = u.list.map((i) => i.appid);
-    let rest = [];
-    if (scope === 'sale' || scope === 'all') {
-      const games = this.getState().games.filter((g) => scope === 'all' || g.disc > 0);
-      rest = games.sort((a, b) => b.disc - a.disc || b.rc - a.rc).map((g) => g.id);
-    }
-    return [...new Set([...mine, ...rest])].filter((id) => this._bgNeeds(this.apps[id]));
+    const mine = new Set(u.list.map((i) => i.appid));
+    let ids = [...mine];
+    if (scope === 'sale' || scope === 'all') ids = ids.concat(this.getState().games.filter((g) => scope === 'all' || g.disc > 0).map((g) => g.id));
+    return [...new Set(ids)]
+      .map((id) => ({ id, a: this.apps[id], tier: this._bgTier(this.apps[id]) }))
+      .filter((x) => x.tier > 0 && x.tier <= maxTier)
+      .sort((x, y) => x.tier - y.tier || (mine.has(y.id) - mine.has(x.id)) || ((y.a.disc > 0) - (x.a.disc > 0)) || (y.a.disc || 0) - (x.a.disc || 0) || (y.a.rc || 0) - (x.a.rc || 0))
+      .map((x) => x.id);
   }
 
   bgStart(scope = 'mine') {

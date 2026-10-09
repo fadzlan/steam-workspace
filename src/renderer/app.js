@@ -143,7 +143,8 @@ function chip(g, t, i) {
 function priceCell(g) {
   if (g.st === 2 && !g.fin) return '<span class="sm">Coming soon</span>';
   if (g.st === 1 || (!g.fin && !g.orig)) return g.st === 1 ? '<span class="sm">Free</span>' : '—';
-  return (g.disc > 0 ? `<span class="old">${esc(g.fOrig)}</span>` : '') + esc(g.fFin);
+  const low = g.low > 0 ? `<span class="lowp${g.fin && g.fin <= g.low ? ' atlow' : ''}" title="SteamDB: ${esc(g.lowNote || 'lowest recorded')}${g.fin && g.fin <= g.low ? ' (it is at that price now)' : ''}">(${price(g.low)})</span>` : '';
+  return (g.disc > 0 ? `<span class="old">${esc(g.fOrig)}</span>` : '') + esc(g.fFin) + low;
 }
 const ratingCell = (g) => g.rc
   ? `<div class="rv"><span>${g.rp}%</span><span class="rvb"><i style="width:${g.rp}%;background:${g.rp >= 70 ? 'var(--good)' : g.rp >= 40 ? 'var(--mixed)' : 'var(--bad)'}"></i></span><span class="sm">${g.rc.toLocaleString()}</span></div>`
@@ -315,6 +316,7 @@ async function openSettings() {
  <label class="ck"><input type="checkbox" id="s-usefc"${s.useFirecrawl ? ' checked' : ''}> Use Firecrawl for SteamDB (no browser window or Cloudflare check; 1 credit per game for the lowest price ever + preview, more if the price graph is enabled below)</label>
  <div class="row"><button class="btn" id="s-fctest">Test Firecrawl</button><span class="sm" id="s-fcres">Uses 1 credit.</span></div>
  <div class="row"><button class="btn" id="s-fcprobe">Find a way to get the price graph</button><span class="sm" id="s-fcprobeinfo">${s.fcHistoryMode === 'js' || s.fcHistoryMode === 'headers' ? 'Found: ' + s.fcHistoryMode + '. Up to 3 credits to re-check.' : s.fcHistoryMode === 'none' ? 'Not available through Firecrawl (last check).' : 'Not checked yet. Uses up to 3 credits.'}</span></div>
+ <label>SteamDB background pace (time between games)<select id="s-pace"><option value=""${!s.bgPace ? ' selected' : ''}>Auto (about 30 s, or a few seconds with Firecrawl)</option><option value="slow"${s.bgPace === 'slow' ? ' selected' : ''}>Slow: 1-2 minutes</option><option value="medium"${s.bgPace === 'medium' ? ' selected' : ''}>Medium: 20-40 seconds</option><option value="fast"${s.bgPace === 'fast' ? ' selected' : ''}>Fast: 8-15 seconds (higher risk of a block)</option></select></label>
  <label>Slowness multiplier (1 = default pacing, 2 = twice as slow)<input type="text" id="s-slow" value="${s.slowness}"></label>
  <label>“Why buy” reasons (one per line)<textarea id="s-why">${esc(whys)}</textarea></label>
  <hr>
@@ -342,7 +344,7 @@ async function openSettings() {
   });
   if (r !== 'ok') return;
   const v = (id) => dlg.querySelector(id);
-  await api.setSettings({ country: v('#s-cc').value, useFamily: v('#s-fam').checked, familyMembers: v('#s-mem').value, apiKey: v('#s-key').value.trim(), firecrawlKey: v('#s-fc').value.trim(), previewDownload: v('#s-prev').value, useFirecrawl: v('#s-usefc').checked, slowness: v('#s-slow').value });
+  await api.setSettings({ country: v('#s-cc').value, useFamily: v('#s-fam').checked, familyMembers: v('#s-mem').value, apiKey: v('#s-key').value.trim(), firecrawlKey: v('#s-fc').value.trim(), previewDownload: v('#s-prev').value, bgPace: v('#s-pace').value, useFirecrawl: v('#s-usefc').checked, slowness: v('#s-slow').value });
   if (SW.st.profile) await api.setWhys(v('#s-why').value.split('\n'));
 }
 

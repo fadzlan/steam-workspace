@@ -78,3 +78,6 @@ details.colmenu .menu{position:absolute;right:0;top:calc(100% + 4px);z-index:20;
 details.colmenu label.ck{display:flex;gap:8px;align-items:center;font-size:13px;cursor:pointer}
 .btn.tiny{padding:1px 6px;font-size:11px;margin-top:4px}
 .btn.warn{margin-top:4px;border-color:var(--mixed);color:var(--mixed)}
+
+.lowp{display:block;font:500 11px var(--mono);color:var(--mut)}
+.lowp.atlow{color:var(--good);font-weight:600}
