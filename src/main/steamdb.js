@@ -1,7 +1,7 @@
 'use strict';
 const { BrowserWindow } = require('electron');
 const { sleep } = require('./throttle');
-const { parseHistory, findGif, CHALLENGE_TITLE } = require('./steamdb-parse');
+const { parseHistory, findGif, mediaUrls, CHALLENGE_TITLE } = require('./steamdb-parse');
 const log = require('./log');
 
 // steamdb.info sits behind Cloudflare, so plain HTTP gets a 403. Pages are loaded in a real
@@ -71,14 +71,23 @@ class SteamDB {
   fetchApp(appid, cc, signal) {
     return this.t.run(HOST, GAP, async () => {
       const wc = await this._open(`https://${HOST}/app/${appid}/`, signal);
-      const html = await wc.executeJavaScript('document.documentElement.outerHTML');
-      const gif = findGif(html);
+      const page = await wc.executeJavaScript(`({ url: location.href, title: document.title, html: document.documentElement.outerHTML })`);
+      const gif = findGif(page.html);
       let hist = null;
+      let api = null;
       try {
-        const txt = await wc.executeJavaScript(`fetch('/api/GetPriceHistory/?appid=${Number(appid)}&cc=${encodeURIComponent(cc)}', { credentials: 'include', headers: { 'x-requested-with': 'XMLHttpRequest' } }).then((r) => r.text())`);
-        hist = parseHistory(JSON.parse(txt));
+        api = await wc.executeJavaScript(`fetch('/api/GetPriceHistory/?appid=${Number(appid)}&cc=${encodeURIComponent(cc)}', { credentials: 'include', headers: { 'x-requested-with': 'XMLHttpRequest' } }).then(async (r) => ({ status: r.status, type: r.headers.get('content-type'), body: await r.text() }))`);
+        hist = parseHistory(JSON.parse(api.body));
       } catch (e) { log.warn(`SteamDB history for ${appid}: ${e.message}`); }
       log.info(`SteamDB ${appid}: history=${hist ? hist.history.length + ' points' : 'none'} gif=${gif ? 'yes' : 'no'}`);
+      if (!hist || !gif) {
+        // enough detail to see what SteamDB really returned without dumping the whole page
+        log.info(`SteamDB ${appid} debug: ${JSON.stringify({
+          page: { url: page.url, title: page.title, htmlLength: page.html.length },
+          api: api ? { status: api.status, type: api.type, length: api.body.length, head: api.body.slice(0, 300) } : null,
+          media: mediaUrls(page.html).slice(0, 8),
+        })}`);
+      }
       return { history: hist ? hist.history : null, low: hist ? hist.low : null, lowAt: hist ? hist.lowAt : null, gif };
     }, signal);
   }

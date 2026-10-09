@@ -20,6 +20,12 @@ function findGif(html) {
   return urls.find((u) => /hover|animated/i.test(u)) || urls[0] || null;
 }
 
+// Any gif/video/hover-looking URLs on the page (for diagnostics).
+function mediaUrls(html) {
+  const all = [...String(html).matchAll(/https?:\/\/[^"'\s)<>]+\.(?:gif|webp|webm|mp4)(?:\?[^"'\s)<>]*)?|https?:\/\/[^"'\s)<>]*hover[^"'\s)<>]*/gi)].map((m) => m[0]);
+  return [...new Set(all)];
+}
+
 const CHALLENGE_TITLE = /just a moment|attention required|checking your browser|verify you are human/i;
 
-module.exports = { parseHistory, findGif, CHALLENGE_TITLE };
+module.exports = { parseHistory, findGif, mediaUrls, CHALLENGE_TITLE };

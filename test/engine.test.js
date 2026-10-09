@@ -142,5 +142,6 @@ test('SteamDB parsing helpers', () => {
   assert.deepEqual([h.low, h.lowAt, h.history.length, h.history[0][1]], [625, 2000, 3, 1250]);
   assert.equal(parseHistory({ data: {} }), null);
   assert.equal(findGif('<img src="https://x/a.gif"><img src="https://x/hover.gif?t=1">'), 'https://x/hover.gif?t=1');
+  assert.deepEqual(require('../src/main/steamdb-parse').mediaUrls('<video src="https://x/a.webm"><img src="https://x/hover_1.png">'), ['https://x/a.webm', 'https://x/hover_1.png']);
   assert.ok(CHALLENGE_TITLE.test('Just a moment...') && !CHALLENGE_TITLE.test('Quake 4 · SteamDB'));
 });
