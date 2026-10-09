@@ -83,6 +83,8 @@ function registerIpc() {
   ipcMain.handle('list:remove', wrap((id) => engine.listRemove(id)));
   ipcMain.handle('list:set', wrap((id, p) => engine.listSet(id, p)));
   ipcMain.handle('whys', wrap((arr) => engine.setWhys(arr)));
+  ipcMain.handle('bg:start', wrap((scope) => engine.bgStart(scope)));
+  ipcMain.handle('bg:stop', wrap(() => engine.bgStop()));
   ipcMain.handle('steamdb:fetch', wrap((id) => engine.fetchSteamDb(id)));
   ipcMain.handle('steamdb:check', wrap(() => engine.steamdb.showChallenge()));
   ipcMain.handle('steam:login', wrap(steamLogin));

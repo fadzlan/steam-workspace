@@ -3,7 +3,6 @@ const path = require('path');
 const { JsonFile } = require('./store');
 const log = require('./log');
 const { assetUrl } = require('./steam');
-const { saleStart } = require('./steamdb-parse');
 
 const DAY = 864e5;
 const DEFAULT_WHYS = ['Great price', 'Wanted for a long time', 'Friends play it', 'Highly rated', 'Genre I love', 'Near historical low', 'Good for the family'];
@@ -24,6 +23,8 @@ class Engine {
     this.usersF = new JsonFile(path.join(dir, 'users.json'), { users: {}, current: null });
     this.status = { running: false, phase: '', done: 0, total: 0, msg: '', warnings: [] };
     this.abort = null;
+    this.bg = { running: false };
+    this.bgDelayMs = () => 60000 + Math.random() * 60000; // 1-2 minutes between SteamDB games
   }
 
   get settings() { return this.settingsF.data; }
@@ -51,16 +52,18 @@ class Engine {
       if (!a || !a.name) { pending++; continue; }
       const fam = famOwners[w.appid] || (famLegacy.has(w.appid) ? ['?'] : []); // steamids of family members who own it
       if (fam.length) familyOwned++;
-      out.games.push({ ...a, added: w.added, db: undefined, hasDb: !!a.db, gif: !!(a.db && a.db.gif), fam, started: a.disc > 0 && a.db ? saleStart(a.db.history) : null });
+      out.games.push({ ...a, added: w.added, db: undefined, hasDb: !!a.db, gif: !!(a.db && a.db.gif), fam });
     }
     out.profile = { steamid: u.steamid, name: u.name, ownedKnown: u.owned != null, familyKnown: u.family != null, familyAt: u.familyAt || 0, familyNames: u.familyNames || {}, syncedAt: u.syncedAt || 0 };
     out.unavailable = gone;
+    const { abort, ...bg } = this.bg; // eslint-disable-line no-unused-vars
+    out.bg = bg;
     out.counts = { wishlist: u.wishlist.length, hiddenOwned, familyOwned, pending, unavailable };
     out.whys = u.whys || DEFAULT_WHYS;
     out.list = u.list.map((i) => {
       const a = this.apps[i.appid] || {};
       const db = a.db || null;
-      return { ...i, history: db ? db.history : null, low: db ? db.low : null, lowAt: db ? db.lowAt : null, more: !!(db && db.more), dbAt: db ? db.at : 0, saleEnd: db ? db.saleEnd || 0 : 0, started: db && a.disc > 0 ? saleStart(db.history) : null };
+      return { ...i, history: db ? db.history : null, low: db ? db.low : null, lowAt: db ? db.lowAt : null, more: !!(db && db.more), dbAt: db ? db.at : 0, saleEnd: db ? db.saleEnd || 0 : 0 };
     });
     return out;
   }
@@ -299,11 +302,80 @@ class Engine {
     const a = this.apps[appid];
     if (!a) throw new Error('Unknown game');
     const r = await this.steamdb.fetchApp(appid, this.settings.country.toLowerCase(), signal);
-    if (!r.history && !r.gif) throw new Error('SteamDB returned no price history or preview for this game (see the log for what it sent).');
+    if (!r.history && !r.gif) throw Object.assign(new Error('SteamDB returned no price history or preview for this game (see the log for what it sent).'), { noData: true });
     a.db = { ...r, at: Date.now(), saleEnd: a.end || 0 }; // saleEnd: the sale this data was fetched during (to know when it is stale)
     this.appsF.save();
     this.emit('state');
     return a.db;
+  }
+
+  // ---- background SteamDB loader --------------------------------------------------------------------
+  // scope: 'mine' (My list), 'sale' (My list, then wishlist games on sale) or 'all' (My list, then the whole wishlist).
+  // One game every 1-2 minutes (random), so SteamDB is never hammered. Stops by itself when SteamDB blocks us.
+  _bgNeeds(a) {
+    if (!a || !a.name || a.gone) return false;
+    if (a.dbSkip && Date.now() - a.dbSkip < 7 * DAY) return false; // SteamDB had nothing / failed recently
+    const db = a.db;
+    if (!db) return true;
+    const ended = db.saleEnd && Date.now() / 1000 > db.saleEnd && db.at / 1000 < db.saleEnd; // fetched during a sale that is over
+    return !!ended || Date.now() - db.at > 30 * DAY;
+  }
+
+  bgQueue(scope) {
+    const u = this.user();
+    if (!u) return [];
+    const mine = u.list.map((i) => i.appid);
+    let rest = [];
+    if (scope === 'sale' || scope === 'all') {
+      const games = this.getState().games.filter((g) => scope === 'all' || g.disc > 0);
+      rest = games.sort((a, b) => b.disc - a.disc || b.rc - a.rc).map((g) => g.id);
+    }
+    return [...new Set([...mine, ...rest])].filter((id) => this._bgNeeds(this.apps[id]));
+  }
+
+  bgStart(scope = 'mine') {
+    if (this.bg.running) return;
+    if (!this.steamdb) throw new Error('SteamDB is not available.');
+    const bg = (this.bg = { running: true, scope, done: 0, failed: 0, total: this.bgQueue(scope).length, next: 0, current: 0, name: '', blocked: null, abort: new AbortController(), errors: 0 });
+    log.info(`SteamDB background load started: scope=${scope}, ${bg.total} games`);
+    this._bgLoop(bg).catch((e) => { log.error('background loop crashed', e); bg.running = false; bg.blocked = { kind: 'errors', msg: e.message }; this.emit('state'); });
+    this.emit('state');
+  }
+
+  bgStop() {
+    if (this.bg.running) { this.bg.abort.abort(); this.bg.running = false; log.info('SteamDB background load stopped'); }
+    this.emit('state');
+  }
+
+  async _bgLoop(bg) {
+    const signal = bg.abort.signal;
+    const finish = (blocked) => { bg.running = false; bg.current = 0; bg.next = 0; bg.blocked = blocked || null; this.emit('state'); };
+    while (!signal.aborted) {
+      const queue = this.bgQueue(bg.scope);
+      if (!queue.length) { log.info(`SteamDB background load finished: ${bg.done} loaded, ${bg.failed} without data`); return finish(); }
+      const id = queue[0], a = this.apps[id];
+      Object.assign(bg, { current: id, name: a.name, total: bg.done + bg.failed + queue.length, next: 0 });
+      this.emit('state');
+      try {
+        await this.fetchSteamDb(id, signal);
+        bg.done++; bg.errors = 0;
+      } catch (e) {
+        if (signal.aborted) return finish();
+        if (e.challenge) { log.warn(`background load blocked: ${e.message}`); return finish({ kind: 'challenge', msg: e.message }); }
+        a.dbSkip = Date.now();
+        bg.failed++;
+        if (e.noData) bg.errors = 0;
+        else if (++bg.errors >= 3) { log.warn(`background load stopped after repeated errors: ${e.message}`); return finish({ kind: 'errors', msg: e.message }); }
+        log.warn(`background load: ${a.name} (${id}) skipped: ${e.message}`);
+        this.appsF.save();
+      }
+      if (!this.bgQueue(bg.scope).length) continue; // loop top reports completion
+      const delay = this.bgDelayMs();
+      bg.next = Date.now() + delay;
+      this.emit('state');
+      await new Promise((resolve) => { const t = setTimeout(resolve, delay); signal.addEventListener('abort', () => { clearTimeout(t); resolve(); }, { once: true }); });
+    }
+    finish();
   }
 
   _warn(m) { log.warn(m); if (!this.status.warnings.includes(m)) this.status.warnings.push(m); }

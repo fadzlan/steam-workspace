@@ -93,7 +93,6 @@ const rel = (ms) => { // "in 12 days" / "8 days ago"
   return d >= 0 ? `in ${t}` : `${t} ago`;
 };
 const endCell = (g) => (g.disc > 0 && g.end ? `<span title="${new Date(g.end * 1000).toLocaleString()}"${g.end * 1000 < Date.now() ? ' class="sm"' : ''}>${g.end * 1000 < Date.now() ? 'ended ' : ''}${rel(g.end * 1000)}</span>` : '<span class="sm">—</span>');
-const startedCell = (g) => (g.started ? `<span title="${new Date(g.started).toLocaleString()}">${rel(g.started)}</span>` : '<span class="sm">—</span>');
 const savedCell = (g) => (g.disc > 0 && g.orig > g.fin ? `<span class="saved">${price(g.orig - g.fin)}</span>` : '<span class="sm">—</span>');
 
 // id, header, td class, sort key, cell(g, listItem), hidden by default
@@ -102,7 +101,6 @@ const LIST_COLS = [
   { id: 'fin', h: 'Price', cls: 'num', sort: 'fin', cell: (g) => priceCell(g) },
   { id: 'saved', h: 'Saved', cls: 'num', sort: 'saved', cell: savedCell },
   { id: 'ends', h: 'Sale ends', cls: 'dv', sort: 'end', cell: endCell },
-  { id: 'started', h: 'Sale started', cls: 'dv', sort: 'started', cell: startedCell, off: true, note: 'needs SteamDB data (games in My list)' },
   { id: 'rp', h: 'Rating', cls: 'num', sort: 'rp', cell: (g) => ratingCell(g) },
   { id: 'rel', h: 'Release', cls: 'dv', sort: 'rel', cell: (g) => (g.st === 2 && !g.rel ? '<span class="sm">TBA</span>' : dstr(g.rel)) },
   { id: 'dev', h: 'Developer / publisher', cls: 'dv', sort: 'dev', cell: (g) => `${esc(g.dev || '—')}${g.pub && g.pub !== g.dev ? `<div class="sm">${esc(g.pub)}</div>` : ''}` },
@@ -132,7 +130,6 @@ function cmp(a, b) {
   const k = S.sort; let x = a[k], y = b[k];
   if (k === 'fin') { x = a.st === 1 ? 0 : a.fin || 1e9; y = b.st === 1 ? 0 : b.fin || 1e9; }
   if (k === 'end') { x = a.disc > 0 && a.end ? a.end : (S.dir > 0 ? 1e12 : 0); y = b.disc > 0 && b.end ? b.end : (S.dir > 0 ? 1e12 : 0); }
-  if (k === 'started') { x = a.started || 0; y = b.started || 0; }
   if (k === 'saved') { x = a.disc > 0 ? a.orig - a.fin : 0; y = b.disc > 0 ? b.orig - b.fin : 0; }
   if (k === 'rp') { x = a.rc ? a.rp + a.rc / 1e9 : -1; y = b.rc ? b.rp + b.rc / 1e9 : -1; }
   if (k === 'rel') { x = x || (S.dir > 0 ? 1e12 : 0); y = y || (S.dir > 0 ? 1e12 : 0); }
@@ -175,7 +172,7 @@ function renderList() {
   $('#tb').innerHTML = sl.length ? sl.map((g) => rowHtml(g, cols)).join('') : `<tr><td colspan="${cols.length + 2}" class="empty">${emptyMsg()}</td></tr>`;
   $('#pinfo').textContent = `${cur.length.toLocaleString()} of ${SW.games.length.toLocaleString()} games · page ${S.page + 1}/${pages}`;
   $('#prev').disabled = S.page === 0; $('#next').disabled = S.page >= pages - 1;
-  document.querySelectorAll('#thead th').forEach((th) => { const on = th.dataset.k === S.sort; th.classList.toggle('s', on); th.querySelector('.ar').textContent = on ? (S.dir > 0 ? '▲' : '▼') : ''; });
+  document.querySelectorAll('#thead th').forEach((th) => { const on = th.dataset.k === S.sort; th.classList.toggle('s', on); const ar = th.querySelector('.ar'); if (ar) ar.textContent = on ? (S.dir > 0 ? '▲' : '▼') : ''; });
   renderSel(); renderTagList();
 }
 function renderSel() {
@@ -238,7 +235,6 @@ const MINE_COLS = [
   { id: 'price', h: 'Price now', cls: 'num', cell: (g) => `${g.disc > 0 ? `<span class="disc">-${g.disc}%</span> ` : ''}${priceCell(g)}` },
   { id: 'saved', h: 'Saved', cls: 'num', cell: savedCell },
   { id: 'ends', h: 'Sale ends', cls: 'dv', cell: endCell },
-  { id: 'started', h: 'Sale started', cls: 'dv', cell: (g, i) => startedCell({ started: i.started }) },
   { id: 'hist', h: 'Price history<br>(SteamDB)', cls: 'c-hist', cell: (g, i) => histCell(g, i) },
   { id: 'note', h: 'Note', cls: 'c-note', cell: (g, i) => `<textarea class="note" rows="4" data-note="${g.id}" placeholder="Note…">${esc(i.note || '')}</textarea>` },
 ];
@@ -408,6 +404,39 @@ function renderFamilyFilter() {
   el.value = S.fam;
 }
 
+// ---- SteamDB background loader -----------------------------------------------------------------------------------
+let bgDismissed = '';
+const mmss = (ms) => { const t = Math.max(0, Math.round(ms / 1000)); return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`; };
+function renderBg() {
+  const b = SW.st.bg || { running: false }, bar = $('#bgbar');
+  $('#bgbtn').textContent = b.running ? 'Stop background load' : 'Load SteamDB in background';
+  $('#bgscope').disabled = !!b.running;
+  const key = `${b.scope}|${b.done}|${b.failed}|${b.blocked ? b.blocked.kind : ''}`;
+  const pct = b.total ? Math.round(((b.done + b.failed) / b.total) * 100) : 0;
+  if (b.running) {
+    bar.hidden = false;
+    bar.innerHTML = `<div class="pmsg"><span>SteamDB background load: ${b.done + b.failed} of ${b.total}${b.failed ? ` (${b.failed} without data)` : ''} · ${b.next ? 'next game in <b id="bgcd"></b>' : `loading ${esc(b.name)}…`}</span><button class="btn" id="bgstop">Stop</button></div><div class="pbar"><i style="width:${pct}%"></i></div>`;
+  } else if (b.blocked) {
+    bar.hidden = false;
+    bar.innerHTML = `<div class="pmsg"><span>SteamDB background load stopped: ${esc(b.blocked.msg)} (${b.done} loaded so far). ${b.blocked.kind === 'challenge' ? 'Open the SteamDB page, solve the check, then resume.' : ''}</span><span class="row"><button class="btn" id="bgcheck">Open SteamDB page</button><button class="btn pri" id="bgresume">Resume</button></span></div>`;
+  } else if ((b.done || b.failed) && bgDismissed !== key) {
+    bar.hidden = false;
+    bar.innerHTML = `<div class="pmsg"><span>SteamDB background load finished: ${b.done} loaded${b.failed ? `, ${b.failed} had no data` : ''}.</span><button class="btn" id="bgdismiss" data-key="${esc(key)}">Dismiss</button></div>`;
+  } else bar.hidden = true;
+}
+setInterval(() => { const el = $('#bgcd'), b = SW.st && SW.st.bg; if (el && b && b.next) el.textContent = mmss(b.next - Date.now()); }, 1000);
+$('#bgscope').value = pref('bgscope', 'mine');
+$('#bgscope').onchange = (e) => setPref('bgscope', e.target.value);
+const bgStart = () => api.bgStart($('#bgscope').value).catch((e) => info('SteamDB', esc(e.message)));
+$('#bgbtn').onclick = () => (SW.st.bg && SW.st.bg.running ? api.bgStop() : bgStart());
+$('#bgbar').onclick = (e) => {
+  const id = e.target.id;
+  if (id === 'bgstop') api.bgStop();
+  else if (id === 'bgresume') { api.bgStart((SW.st.bg && SW.st.bg.scope) || $('#bgscope').value).catch((er) => info('SteamDB', esc(er.message))); }
+  else if (id === 'bgcheck') api.steamdbCheck();
+  else if (id === 'bgdismiss') { bgDismissed = e.target.dataset.key; renderBg(); }
+};
+
 function renderChrome() {
   const st = SW.st, c = st.counts || {};
   const un = st.unavailable || [];
@@ -418,6 +447,7 @@ function renderChrome() {
       (c.unavailable ? ` · <a href="#" id="unavail" class="statlink" title="${esc(tip)}">${c.unavailable} unavailable on Steam</a>` : '')
     : 'No profile loaded';
   renderFamilyFilter();
+  renderBg();
   if (document.activeElement !== $('#user')) $('#user').value = st.settings.username || '';
   $('#legend').innerHTML = CATN.map((n, i) => `<span class="it"><i class="sw" style="background:var(--c${i})"></i>${n}</span>`).join('') +
     '<span class="it"><span class="tg sh k1" style="cursor:default">solid</span>shown on Steam</span><span class="it"><span class="tg ex k1" style="cursor:default">outline</span>extra tag</span>';

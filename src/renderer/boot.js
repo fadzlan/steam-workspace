@@ -14,7 +14,7 @@
   const reload = async () => {
     if (busy) { again = true; return; }
     busy = true;
-    try { await loadState(); renderChrome(); renderTab(); } catch (e) { console.error(e); }
+    try { await loadState(); renderChrome(); renderTab(); } catch (e) { console.error(e && e.stack || e); }
     busy = false;
     if (again) { again = false; reload(); }
   };

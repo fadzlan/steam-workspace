@@ -47,9 +47,10 @@ class SteamDB {
         w.setTitle('SteamDB check: solve it, this window closes by itself');
         w.show(); w.focus();
       }
-      if (w.isDestroyed()) throw Object.assign(new Error('SteamDB check window was closed.'), { challenge: true });
+      if (w.isDestroyed()) { this.onStatus(null); throw Object.assign(new Error('SteamDB check window was closed.'), { challenge: true }); }
       if (Date.now() - t0 > CHALLENGE_WAIT_MS) {
         w.hide();
+        this.onStatus(null);
         throw Object.assign(new Error('SteamDB check was not completed in time.'), { challenge: true });
       }
       await sleep(1000);

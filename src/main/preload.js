@@ -16,6 +16,8 @@ contextBridge.exposeInMainWorld('api', {
   listRemove: (id) => call('list:remove', id),
   listSet: (id, p) => call('list:set', id, p),
   setWhys: (a) => call('whys', a),
+  bgStart: (scope) => call('bg:start', scope),
+  bgStop: () => call('bg:stop'),
   steamdbFetch: (id) => call('steamdb:fetch', id),
   steamdbCheck: () => call('steamdb:check'),
   steamLogin: () => call('steam:login'),

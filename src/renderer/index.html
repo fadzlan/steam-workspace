@@ -27,6 +27,7 @@
  <div class="pbar"><i id="pfill"></i></div>
 </div>
 <div id="hint" class="progress" hidden></div>
+<div id="bgbar" class="progress" hidden></div>
 <ul id="warns" class="warns"></ul>
 <div class="legend" id="legend" style="margin-bottom:10px"></div>
 <div class="tabs" role="tablist">
@@ -77,6 +78,8 @@
   <div class="seg" id="mtags" title="Which tags to show under each game"><button data-v="shown" aria-pressed="true">Shown tags</button><button data-v="all" aria-pressed="false">All tags</button></div>
   <span class="sm" id="mtotal"></span>
   <span class="grow"></span>
+  <select id="bgscope" aria-label="Which games to load from SteamDB" title="Which games to load from SteamDB, one every 1-2 minutes"><option value="mine">SteamDB: My list</option><option value="sale">SteamDB: My list + wishlist on sale</option><option value="all">SteamDB: My list + whole wishlist</option></select>
+  <button class="btn" id="bgbtn" title="Loads price history and previews from SteamDB in the background, one game every 1-2 minutes. Leave the app open.">Load SteamDB in background</button>
   <details class="colmenu" id="colmenu-mine"><summary class="btn">Columns</summary><div class="menu"></div></details>
   <button class="btn pri" id="bought" title="Re-sync, then drop games you now own from the wishlist and this list">I bought some games · refresh</button>
  </div>

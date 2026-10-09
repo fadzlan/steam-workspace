@@ -28,22 +28,6 @@ function microtrailerUrl(videoCdn, json) {
   return `${videoCdn}store_trailers/${path}${m.time ? `?t=${m.time}` : ''}`;
 }
 
-// When the current sale started (ms), from history points [ms, cents, discount%?]. Walks back over the
-// trailing run of discounted points; old cached data without the discount falls back to the last price drop.
-function saleStart(history) {
-  if (!Array.isArray(history) || history.length < 2) return null;
-  const last = history.length - 1;
-  if (history[last][2] !== undefined) {
-    if (!(history[last][2] > 0)) return null;
-    let i = last;
-    while (i > 0 && history[i - 1][2] > 0) i--;
-    return history[i][0];
-  }
-  let i = last;
-  while (i > 0 && history[i - 1][1] > history[i][1]) i--;
-  return i < last ? history[i + 1][0] : null;
-}
-
 const CHALLENGE_TITLE = /just a moment|attention required|checking your browser|verify you are human/i;
 
-module.exports = { parseHistory, saleStart, microtrailerUrl, CHALLENGE_TITLE };
+module.exports = { parseHistory, microtrailerUrl, CHALLENGE_TITLE };
