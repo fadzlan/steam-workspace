@@ -2,17 +2,19 @@
 const fs = require('fs');
 const path = require('path');
 const { get } = require('./http');
+const log = require('./log');
 
 const CDN = 'cdn.cloudflare.steamstatic.com';
 const EXT_MIME = { '.jpg': 'image/jpeg', '.png': 'image/png', '.gif': 'image/gif', '.webp': 'image/webp', '.webm': 'video/webm', '.mp4': 'video/mp4' };
 
 // On-disk image cache. Files are fetched lazily, one at a time, the first time the UI asks.
 class Images {
-  constructor(dir, throttle, resolveHover, resolveAssets) {
+  constructor(dir, throttle, resolveHover, resolveAssets, peekAssets) {
     this.dir = dir;
     this.t = throttle;
     this.resolveHover = resolveHover; // (appid) => url | null
     this.resolveAssets = resolveAssets || (async () => null); // (appid) => {thumb, header} | null
+    this.peekAssets = peekAssets || (() => null); // (appid) => {thumb, header} | null, already-known hashed URLs
     this.inflight = new Map();
     this.failed = new Map(); // key -> time of last failure, to avoid hammering 404s
   }
@@ -67,15 +69,15 @@ class Images {
   }
 
   async _download(kind, id) {
-    const urls = this._candidates(kind, id);
-    for (const url of urls) { const f = await this._try(url, kind, id); if (f) return f; }
-    if (kind === 'thumb' || kind === 'header') {
-      // newer apps use hashed asset paths; ask the store API for the real ones
-      const a = await this.resolveAssets(Number(id)).catch(() => null);
-      if (a) for (const url of [kind === 'thumb' ? a.thumb : null, a.header]) { if (url) { const f = await this._try(url, kind, id); if (f) return f; } }
-    }
-    this.failed.set(kind + id, Date.now());
-    return null;
+    const tryAll = async (urls) => { for (const url of urls) { if (!url) continue; const f = await this._try(url, kind, id); if (f) return f; } return null; };
+    const pick = (a) => (a ? (kind === 'thumb' ? [a.thumb, a.header] : [a.header]) : []);
+    const isImage = kind === 'thumb' || kind === 'header';
+    // 1. URLs the store API already told us (newer games use hashed paths), 2. the legacy path, 3. ask the API now
+    let f = isImage ? await tryAll(pick(this.peekAssets(Number(id)))) : null;
+    if (!f) f = await tryAll(this._candidates(kind, id));
+    if (!f && isImage) f = await tryAll(pick(await this.resolveAssets(Number(id)).catch(() => null)));
+    if (!f) { this.failed.set(kind + id, Date.now()); if (isImage) log.warn(`no ${kind} image found for app ${id}`); }
+    return f;
   }
 
   size() {

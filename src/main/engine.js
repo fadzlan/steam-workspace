@@ -68,10 +68,16 @@ class Engine {
     return out;
   }
 
+  // Image URLs we already know for an app (saved from the store API), or null.
+  peekAssets(id) {
+    const a = this.apps[id];
+    return a && a.ia && (a.isc || a.ih) ? { thumb: assetUrl(a, a.isc), header: assetUrl(a, a.ih) } : null;
+  }
+
   // Real (hashed) image URLs for an app, looked up lazily and in batches when a default URL 404s.
   assetUrls(id) {
-    const a = this.apps[id];
-    if (a && a.isc) return Promise.resolve({ thumb: assetUrl(a, a.isc), header: assetUrl(a, a.ih) });
+    const known = this.peekAssets(id);
+    if (known) return Promise.resolve(known);
     this._aq = this._aq || new Map();
     if (!this._aq.has(id)) {
       let resolve;
@@ -93,8 +99,9 @@ class Engine {
       const got = new Map(items.filter((x) => x.id).map((x) => [x.id, x]));
       for (const id of chunk) {
         const it = got.get(id), a = this.apps[id];
-        if (it && !it.gone && a && it.isc) { a.ia = it.ia; a.isc = it.isc; a.ih = it.ih; this.appsF.save(); }
-        q.get(id).resolve(it && it.isc ? { thumb: assetUrl(it, it.isc), header: assetUrl(it, it.ih) } : null);
+        const ok = it && !it.gone && it.ia && (it.isc || it.ih); // some games only have a header
+        if (ok && a) { a.ia = it.ia; a.isc = it.isc; a.ih = it.ih; this.appsF.save(); }
+        q.get(id).resolve(ok ? { thumb: assetUrl(it, it.isc), header: assetUrl(it, it.ih) } : null);
       }
     }
   }

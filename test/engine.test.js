@@ -150,7 +150,7 @@ test('images fall back to hashed asset URLs when the legacy path 404s', async ()
   s.getItems = async (ids) => ids.map((id) => ({ id, name: 'G' + id, ia: 'steam/apps/' + id + '/${FILENAME}?t=1', isc: 'abc/capsule_231x87.jpg', ih: 'def/header.jpg' }));
   const e = mk(s);
   await e.sync();
-  delete e.apps[1].isc; // pretend cached before assets were stored
+  delete e.apps[1].isc; delete e.apps[1].ih; delete e.apps[1].ia; // pretend cached before assets were stored
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'swi-'));
   const img = new Images(dir, new Throttle(() => 0), () => null, (id) => e.assetUrls(id));
   const file = await img.get('thumb', 1);
@@ -245,4 +245,24 @@ test('background load skips games SteamDB has nothing for and can be stopped', a
   await new Promise((r) => setTimeout(r, 30));
   s.bgStop();
   assert.equal(s.bg.running, false);
+});
+
+test('images use already-known hashed URLs first and cope with games that only have a header', async () => {
+  const fs = require('fs');
+  const { Images } = require('../src/main/images');
+  const { setFetch } = require('../src/main/http');
+  const seen = [];
+  setFetch(async (url) => { seen.push(url); return url.includes('store_item_assets') ? new Response(Buffer.from('jpg'), { status: 200 }) : new Response('', { status: 404 }); });
+  const s = fakeSteam();
+  s.getItems = async (ids) => ids.map((id) => ({ id, name: 'G' + id, ia: 'steam/apps/' + id + '/${FILENAME}?t=1', isc: id === 2 ? '' : 'abc/capsule_231x87.jpg', ih: 'def/header.jpg' }));
+  const e = mk(s);
+  await e.sync();
+  const img = new Images(fs.mkdtempSync(path.join(os.tmpdir(), 'swi-')), new Throttle(() => 0), () => null, (id) => e.assetUrls(id), (id) => e.peekAssets(id));
+  seen.length = 0;
+  assert.ok(await img.get('thumb', 1));
+  assert.ok(seen[0].includes('store_item_assets') && seen.length === 1, 'no 404 round trip first');
+  seen.length = 0;
+  assert.ok(await img.get('thumb', 2), 'header-only game still gets an image');
+  assert.ok(seen[0].includes('/def/header.jpg'));
+  setFetch((...a) => fetch(...a));
 });

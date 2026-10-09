@@ -26,7 +26,7 @@ function createEngine() {
   const throttle = new Throttle(() => (engine ? engine.settings.slowness : 1));
   engine = new Engine({ dir, steam: new Steam(throttle), steamdb: new SteamDB(throttle), emit: (k) => send(k) });
   engine.steamdb.onStatus = (m) => win && !win.isDestroyed() && win.webContents.send('hint', m);
-  images = new Images(path.join(dir, 'images'), throttle, (id) => engine.hoverUrl(id), (id) => engine.assetUrls(id));
+  images = new Images(path.join(dir, 'images'), throttle, (id) => engine.hoverUrl(id), (id) => engine.assetUrls(id), (id) => engine.peekAssets(id));
 }
 
 let pushTimer = null;
