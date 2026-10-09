@@ -75,6 +75,8 @@
 <section id="v-mine" hidden>
  <div class="toolbar">
   <select id="mwhy" aria-label="Filter by reason"></select>
+  <select id="mtagadd" aria-label="Filter by tag"></select>
+  <div class="seg" id="mmode" hidden title="Games must have all selected tags, or any of them"><button data-v="and" aria-pressed="true">Match all</button><button data-v="or" aria-pressed="false">Match any</button></div>
   <div class="seg" id="mtags" title="Which tags to show under each game"><button data-v="shown" aria-pressed="true">Shown tags</button><button data-v="all" aria-pressed="false">All tags</button></div>
   <span class="sm" id="mtotal"></span>
   <span class="grow"></span>
@@ -83,6 +85,7 @@
   <details class="colmenu" id="colmenu-mine"><summary class="btn">Columns</summary><div class="menu"></div></details>
   <button class="btn pri" id="bought" title="Re-sync, then drop games you now own from the wishlist and this list">I bought some games · refresh</button>
  </div>
+ <div class="selbar" id="mselbar"></div>
  <div class="tblwrap"><table class="mine" style="min-width:1100px"><thead><tr id="mhead"></tr></thead><tbody id="mb"></tbody></table></div>
  <p class="hint">Pick a reason for each game to keep your buying decisions explicit. Reasons are editable in Settings or with “New reason…”. History and the hover preview come from SteamDB.</p>
 </section>

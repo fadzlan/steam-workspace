@@ -15,6 +15,7 @@ const S = SW.S;
 const pref = (k, d) => { try { return localStorage.getItem('sw-' + k) || d; } catch (_) { return d; } };
 const setPref = (k, v) => { try { localStorage.setItem('sw-' + k, v); } catch (_) {} };
 S.fam = pref('fam', 'all'); // family filter: all | hide | only | m:<steamid>
+S.msel = new Set(); S.mmode = 'and'; // My list tag filter
 S.mtags = pref('mtags', 'shown'); // My list: 'shown' = the 5 Steam shows, 'all' = every tag
 const PS = 100;
 
@@ -136,9 +137,9 @@ function cmp(a, b) {
   const r = typeof x === 'string' ? x.localeCompare(y) : x - y;
   return (r || b.rc - a.rc) * S.dir;
 }
-function chip(g, t, i) {
+function chip(g, t, i, mine) {
   const k = SW.cat(t);
-  return `<button class="tg k${k} ${i < 5 ? 'sh' : 'ex'}${S.sel.has(t) ? ' on' : ''}" data-t="${t}" title="${CATN[k]}${i < 5 ? ' · shown on Steam' : ' · extra tag'}">${esc(SW.tagName[t])}</button>`;
+  return `<button class="tg k${k} ${i < 5 ? 'sh' : 'ex'}${(mine ? S.msel : S.sel).has(t) ? ' on' : ''}" ${mine ? 'data-mt' : 'data-t'}="${t}" title="${CATN[k]}${i < 5 ? ' · shown on Steam' : ' · extra tag'}">${esc(SW.tagName[t])}</button>`;
 }
 function priceCell(g) {
   if (g.st === 2 && !g.fin) return '<span class="sm">Coming soon</span>';
@@ -199,7 +200,7 @@ function seg(sel, key, fn) {
   el.onclick = (e) => { const b = e.target.closest('button'); if (!b) return; S[key] = b.dataset.v; syncSeg(); fn(); };
 }
 function syncSeg() {
-  for (const [id, key] of [['#mode', 'mode'], ['#scope', 'scope'], ['#bscope', 'scope'], ['#bsrc', 'bsrc'], ['#psrc', 'psrc'], ['#csrc', 'csrc'], ['#mtags', 'mtags']])
+  for (const [id, key] of [['#mmode', 'mmode'], ['#mode', 'mode'], ['#scope', 'scope'], ['#bscope', 'scope'], ['#bsrc', 'bsrc'], ['#psrc', 'psrc'], ['#csrc', 'csrc'], ['#mtags', 'mtags']])
     document.querySelectorAll(id + ' button').forEach((b) => b.setAttribute('aria-pressed', b.dataset.v === S[key]));
 }
 
@@ -257,7 +258,20 @@ function renderMine() {
   const f = $('#mwhy'), prev = f.value || '__all';
   f.innerHTML = '<option value="__all">All reasons</option><option value="__none">No reason yet</option>' + SW.st.whys.map((w) => `<option>${esc(w)}</option>`).join('');
   f.value = [...f.options].some((o) => o.value === prev) ? prev : '__all';
-  const rows = items.filter((i) => f.value === '__all' || (f.value === '__none' ? !i.why : i.why === f.value));
+  const byReason = items.filter((i) => f.value === '__all' || (f.value === '__none' ? !i.why : i.why === f.value));
+  // tag filter: picker (tags of the games that pass the reason filter, with counts) + selected chips
+  const tagCount = {};
+  for (const i of byReason) { const g = SW.byId.get(i.appid); if (g) for (const t of g.all) tagCount[t] = (tagCount[t] || 0) + 1; }
+  for (const t of [...S.msel]) if (!tagCount[t]) S.msel.delete(t); // a selected tag no game has any more
+  const pick = $('#mtagadd');
+  pick.innerHTML = '<option value="">Filter by tag…</option>' + Object.keys(tagCount).map(Number).filter((t) => !S.msel.has(t)).sort((a, b) => tagCount[b] - tagCount[a] || SW.tagName[a].localeCompare(SW.tagName[b])).map((t) => `<option value="${t}">${esc(SW.tagName[t])} (${tagCount[t]})</option>`).join('');
+  $('#mselbar').innerHTML = S.msel.size ? [...S.msel].map((t) => `<button class="tg sh k${SW.cat(t)} x on" data-mt="${t}">${esc(SW.tagName[t])}</button>`).join('') + '<button class="btn" id="mclr">Clear tags</button>' : '';
+  $('#mmode').hidden = S.msel.size < 2;
+  const rows = S.msel.size ? byReason.filter((i) => {
+    const g = SW.byId.get(i.appid);
+    if (!g) return false;
+    return S.mmode === 'and' ? [...S.msel].every((t) => g.all.has(t)) : [...S.msel].some((t) => g.all.has(t));
+  }) : byReason;
   const cols = mineCols();
   $('#mhead').innerHTML = '<th></th><th>Game</th>' + cols.map((c) => `<th class="${c.cls}" style="cursor:default">${c.h}</th>`).join('') + '<th></th>';
   let total = 0;
@@ -265,10 +279,10 @@ function renderMine() {
     const g = SW.byId.get(i.appid);
     if (!g) return `<tr><td></td><td>App ${i.appid} <span class="sm">(details pending)</span></td><td colspan="${cols.length}"></td><td><button class="btn" data-rm="${i.appid}">Remove</button></td></tr>`;
     total += g.fin || 0;
-    const tags = g.tags.map((t, k) => [t, k]).filter(([, k]) => S.mtags === 'all' || k < 5).map(([t, k]) => chip(g, t, k)).join('');
+    const tags = g.tags.map((t, k) => [t, k]).filter(([, k]) => S.mtags === 'all' || k < 5).map(([t, k]) => chip(g, t, k, true)).join('');
     return `<tr><td style="width:34px">${starBtn(g)}</td><td>${gameCell(g)}<div class="tags mtags">${tags}</div></td>` +
       cols.map((c) => `<td class="${c.cls}">${c.cell(g, i)}</td>`).join('') + `<td><button class="btn" data-rm="${g.id}">Remove</button></td></tr>`;
-  }).join('') || `<tr><td colspan="${cols.length + 3}" class="empty">${items.length ? 'No games with this reason.' : 'Your list is empty. Click ☆ next to a game on the Wishlist tab.'}</td></tr>`;
+  }).join('') || `<tr><td colspan="${cols.length + 3}" class="empty">${items.length ? 'No games match these filters.' : 'Your list is empty. Click ☆ next to a game on the Wishlist tab.'}</td></tr>`;
   $('#mtotal').textContent = rows.length ? `${rows.length} game${rows.length > 1 ? 's' : ''} · total ${price(total)}` : '';
 }
 colMenu('list', LIST_COLS, () => renderList());
@@ -373,6 +387,9 @@ document.addEventListener('click', (e) => {
   if (t.closest('#unavail')) { e.preventDefault(); showUnavailable(); return; }
   const tg = t.closest('.tg[data-t],.tl[data-t]');
   if (tg && tg.closest('#v-list')) { const id = +tg.dataset.t; S.sel.has(id) ? S.sel.delete(id) : S.sel.add(id); S.page = 0; renderList(); return; }
+  const mt = t.closest('.tg[data-mt]');
+  if (mt) { const id = +mt.dataset.mt; S.msel.has(id) ? S.msel.delete(id) : S.msel.add(id); renderMine(); return; }
+  if (t.closest('#mclr')) { S.msel.clear(); renderMine(); return; }
   const st = t.closest('[data-star]');
   if (st) { const id = +st.dataset.star; (SW.listIds.has(id) ? api.listRemove(id) : api.listAdd(id)).catch((er) => info('Error', esc(er.message))); return; }
   const rm = t.closest('[data-rm]'); if (rm) { api.listRemove(+rm.dataset.rm); return; }
@@ -393,6 +410,8 @@ document.addEventListener('change', async (e) => {
 });
 document.addEventListener('input', (e) => { const n = e.target.closest && e.target.closest('[data-note]'); if (n) { clearTimeout(n._t); n._t = setTimeout(() => api.listSet(+n.dataset.note, { note: n.value }), 500); } });
 $('#mwhy').onchange = renderMine;
+$('#mtagadd').onchange = (e) => { if (e.target.value) { S.msel.add(+e.target.value); renderMine(); } };
+seg('#mmode', 'mmode', renderMine);
 $('#sync').onclick = () => runSync('sync').catch((e) => info('Sync failed', esc(e.message)));
 $('#prices').onclick = () => runSync('prices').catch((e) => info('Sync failed', esc(e.message)));
 $('#bought').onclick = () => runSync('sync').catch((e) => info('Sync failed', esc(e.message)));
