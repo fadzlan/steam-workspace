@@ -71,20 +71,52 @@ function pass(g, skipTags) {
 
 // ---- thumbs (cached on disk by the main process) ------------------------------------
 const thumb = (g) => `<img loading="lazy" alt="" src="swimg://thumb/${g.id}" data-id="${g.id}" data-gif="${g.gif ? 1 : ''}">`;
-// Hover preview: SteamDB's micro-trailer (muted, looping) plays over the thumbnail.
+// Hover popover: a large floating preview next to the thumbnail. Plays the game's muted looping trailer when
+// we have one (poster: the header image while the first download finishes), else shows the enlarged header image.
+const pv = document.createElement('div');
+pv.id = 'pv'; pv.hidden = true;
+pv.innerHTML = '<video muted loop playsinline></video><img alt=""><div class="pvt"></div>';
+document.body.appendChild(pv);
+const pvVideo = pv.querySelector('video'), pvImg = pv.querySelector('img'), pvTitle = pv.querySelector('.pvt');
+let pvTimer = null, pvEl = null;
+function pvHide() {
+  clearTimeout(pvTimer); pvTimer = null; pvEl = null;
+  pv.hidden = true;
+  pvVideo.pause(); pvVideo.removeAttribute('src'); pvVideo.removeAttribute('poster'); pvVideo.load();
+  pvImg.removeAttribute('src');
+}
+function pvShow(el) {
+  const id = el.dataset.id, g = SW.byId.get(+id);
+  const header = `swimg://header/${id}`;
+  const showImg = () => { pvVideo.hidden = true; pvImg.hidden = false; pvImg.src = header; };
+  if (el.dataset.gif === '1') {
+    pvImg.hidden = true; pvVideo.hidden = false;
+    pvVideo.poster = header;
+    pvVideo.onerror = () => { pvVideo.onerror = null; if (pvEl === el) showImg(); }; // preview could not be downloaded: fall back to the header
+    pvVideo.src = `swimg://hover/${id}`;
+    pvVideo.play().catch(() => {});
+  } else showImg();
+  pvTitle.textContent = g ? g.name : '';
+  pv.style.visibility = 'hidden'; pv.hidden = false;
+  const r = el.getBoundingClientRect(), w = pv.offsetWidth, h = pv.offsetHeight;
+  let x = r.right + 14;
+  if (x + w > innerWidth - 8) x = r.left - 14 - w;          // no room on the right: open on the left
+  pv.style.left = Math.max(8, x) + 'px';
+  pv.style.top = Math.min(Math.max(8, r.top + r.height / 2 - h / 2), Math.max(8, innerHeight - h - 8)) + 'px';
+  pv.style.visibility = 'visible';
+}
 document.addEventListener('mouseover', (e) => {
-  const i = e.target.closest && e.target.closest('img[data-gif="1"]');
-  if (!i || i.parentNode.querySelector('video')) return;
-  const v = document.createElement('video');
-  Object.assign(v, { src: `swimg://hover/${i.dataset.id}`, muted: true, loop: true, autoplay: true, playsInline: true, className: 'hovervid' });
-  v.onerror = () => v.remove();
-  i.parentNode.appendChild(v);
-  v.play().catch(() => {});
+  const el = e.target.closest && e.target.closest('.th img[data-id]');
+  if (!el || el === pvEl) return;
+  pvHide(); pvEl = el;
+  pvTimer = setTimeout(() => pvShow(el), 250);             // short delay so sweeping the mouse does not flash popovers
 });
 document.addEventListener('mouseout', (e) => {
   const th = e.target.closest && e.target.closest('.th');
-  if (th && !th.contains(e.relatedTarget)) th.querySelectorAll('video').forEach((v) => v.remove());
+  if (th && !th.contains(e.relatedTarget)) pvHide();
 });
+addEventListener('scroll', pvHide, true);
+addEventListener('blur', pvHide);
 
 // ---- wishlist table --------------------------------------------------------------------
 // ---- toggleable columns -------------------------------------------------------------------------------
