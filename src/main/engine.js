@@ -306,7 +306,7 @@ class Engine {
     // list items first, then newest wishlist additions
     wanted.sort((a, b) => (inList.has(b.appid) - inList.has(a.appid)) || b.added - a.added);
     const cutoff = Date.now() - (mode === 'prices' ? 0 : DAY);
-    const need = wanted.map((w) => w.appid).filter((id) => { const a = this.apps[id]; return !a || (a.at || 0) < (a.gone ? Date.now() - 7 * DAY : cutoff) || (!a.gone && a.mt === undefined); }); // mt undefined: saved before preview addresses existed, refresh once
+    const need = wanted.map((w) => w.appid).filter((id) => { const a = this.apps[id]; return !a || (a.at || 0) < (a.gone ? Date.now() - 7 * DAY : cutoff) || (!a.gone && (a.mt === undefined || a.deck === undefined)); }); // saved before preview addresses / Steam Deck status existed: refresh once
     void visible;
     const cc = this.settings.country;
     let done = 0;

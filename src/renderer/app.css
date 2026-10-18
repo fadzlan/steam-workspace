@@ -82,3 +82,6 @@ details.colmenu label.ck{display:flex;gap:8px;align-items:center;font-size:13px;
 .lowp{display:block;font:500 11px var(--mono);color:var(--mut)}
 .lowp.atlow{color:var(--good);font-weight:600}
 [hidden]{display:none!important}
+
+.gtitle{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.deck{display:inline-flex;line-height:0;flex:none}

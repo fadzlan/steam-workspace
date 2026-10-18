@@ -151,8 +151,18 @@ const ratingCell = (g) => g.rc
   ? `<div class="rv"><span>${g.rp}%</span><span class="rvb"><i style="width:${g.rp}%;background:${g.rp >= 70 ? 'var(--good)' : g.rp >= 40 ? 'var(--mixed)' : 'var(--bad)'}"></i></span><span class="sm">${g.rc.toLocaleString()}</span></div>`
   : '<span class="sm">—</span>';
 const starBtn = (g) => `<button class="star${SW.listIds.has(g.id) ? ' on' : ''}" data-star="${g.id}" title="${SW.listIds.has(g.id) ? 'Remove from my list' : 'Add to my list'}">${SW.listIds.has(g.id) ? '★' : '☆'}</button>`;
+// Steam Deck compatibility icon (verified / playable / unsupported); nothing when Valve has not rated the game.
+const DECK = {
+  3: ['Steam Deck Verified', '#4c9a2a', '<path d="M8.6 8.2l2.1 2.1 4.4-4.9" fill="none" stroke="#fff" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>'],
+  2: ['Steam Deck Playable (works, with some caveats)', '#c99a10', '<path d="M13 5v4.2" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/><circle cx="13" cy="11.6" r="1" fill="#fff"/>'],
+  1: ['Steam Deck Unsupported', '#b5483a', '<path d="M9.8 6l6.4 5.4M16.2 6l-6.4 5.4" stroke="#fff" stroke-width="1.7" stroke-linecap="round"/>'],
+};
+const deckBadge = (g) => {
+  const d = DECK[g.deck];
+  return d ? `<span class="deck" title="${d[0]}" aria-label="${d[0]}"><svg width="26" height="17" viewBox="0 0 26 17"><rect x="1" y="1" width="24" height="15" rx="5" fill="${d[1]}"/><rect x="6" y="3" width="14" height="11" rx="2" fill="#0003"/>${d[2].replace(/y="/g, 'y="')}<circle cx="3.4" cy="8.5" r="1" fill="#fff9"/><circle cx="22.6" cy="8.5" r="1" fill="#fff9"/></svg></span>` : '';
+};
 const famBadge = (g) => (g.fam && g.fam.length ? `<span class="famb" title="Owned in your Steam Family library">👪 ${esc(famNames(g).join(', '))}</span>` : '');
-const gameCell = (g, extra = '') => `<div class="gm"><div class="th">${thumb(g)}</div><div class="gn"><a href="https://store.steampowered.com/app/${g.id}" data-open>${esc(g.name)}</a>${g.type === 4 ? '<span class="badge" style="width:max-content;margin:0">DLC</span>' : ''}${famBadge(g)}${extra}</div></div>`;
+const gameCell = (g, extra = '') => `<div class="gm"><div class="th">${thumb(g)}</div><div class="gn"><span class="gtitle"><a href="https://store.steampowered.com/app/${g.id}" data-open>${esc(g.name)}</a>${deckBadge(g)}</span>${g.type === 4 ? '<span class="badge" style="width:max-content;margin:0">DLC</span>' : ''}${famBadge(g)}${extra}</div></div>`;
 
 function rowHtml(g, cols) {
   return `<tr><td style="width:34px">${starBtn(g)}</td><td>${gameCell(g, `<div class="tags">${g.tags.map((t, i) => chip(g, t, i)).join('')}</div>`)}</td>` +

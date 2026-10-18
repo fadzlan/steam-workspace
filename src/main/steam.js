@@ -80,7 +80,7 @@ class Steam {
     const input = {
       ids: appids.map((appid) => ({ appid })),
       context: { language: 'english', country_code: country },
-      data_request: { include_assets: true, include_trailers: true, include_release: true, include_tag_count: 20, include_reviews: true, include_basic_info: true },
+      data_request: { include_assets: true, include_trailers: true, include_platforms: true, include_release: true, include_tag_count: 20, include_reviews: true, include_basic_info: true },
     };
     const url = `https://${API}/IStoreBrowseService/GetItems/v1?input_json=${encodeURIComponent(JSON.stringify(input))}`;
     const j = await this._json(url, signal);
@@ -126,6 +126,8 @@ function normalizeItem(it) {
     st: soon ? 2 : free ? 1 : 0,
     // newer apps keep images under hashed paths, so remember the real file names
     mt: microtrailerUrl(it),
+    // Steam Deck compatibility: 0 unknown, 1 unsupported, 2 playable, 3 verified
+    deck: (it.platforms && it.platforms.steam_deck_compat_category) || 0,
     ia: (it.assets && it.assets.asset_url_format) || '',
     isc: (it.assets && it.assets.small_capsule) || '',
     ih: (it.assets && it.assets.header) || '',

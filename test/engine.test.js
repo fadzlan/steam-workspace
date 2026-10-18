@@ -17,7 +17,7 @@ function fakeSteam({ owned = [], wishlist = [1, 2, 3, 4] } = {}) {
     getTagList: async () => ({ 19: 'Action', 21: 'Adventure' }),
     getOwned: async (id) => (id.endsWith('2') ? [3] : owned),
     getFamilyLibrary: async () => null,
-    getItems: async (ids) => { calls.push(ids); return ids.map((id) => ({ id, name: 'G' + id, tagids: [19], disc: 10, orig: 1000, fin: 900, st: 0, at: Date.now(), mt: '' })); },
+    getItems: async (ids) => { calls.push(ids); return ids.map((id) => ({ id, name: 'G' + id, tagids: [19], disc: 10, orig: 1000, fin: 900, st: 0, at: Date.now(), deck: 0, mt: '' })); },
   };
 }
 const mk = (steam, settings = {}) => {
@@ -147,7 +147,7 @@ test('images fall back to hashed asset URLs when the legacy path 404s', async ()
     return url.includes('store_item_assets') ? new Response(Buffer.from('jpg'), { status: 200 }) : new Response('', { status: 404 });
   });
   const s = fakeSteam();
-  s.getItems = async (ids) => ids.map((id) => ({ id, name: 'G' + id, ia: 'steam/apps/' + id + '/${FILENAME}?t=1', isc: 'abc/capsule_231x87.jpg', ih: 'def/header.jpg' }));
+  s.getItems = async (ids) => ids.map((id) => ({ id, name: 'G' + id, deck: 0, mt: '', ia: 'steam/apps/' + id + '/${FILENAME}?t=1', isc: 'abc/capsule_231x87.jpg', ih: 'def/header.jpg' }));
   const e = mk(s);
   await e.sync();
   delete e.apps[1].isc; delete e.apps[1].ih; delete e.apps[1].ia; // pretend cached before assets were stored
@@ -254,7 +254,7 @@ test('images use already-known hashed URLs first and cope with games that only h
   const seen = [];
   setFetch(async (url) => { seen.push(url); return url.includes('store_item_assets') ? new Response(Buffer.from('jpg'), { status: 200 }) : new Response('', { status: 404 }); });
   const s = fakeSteam();
-  s.getItems = async (ids) => ids.map((id) => ({ id, name: 'G' + id, ia: 'steam/apps/' + id + '/${FILENAME}?t=1', isc: id === 2 ? '' : 'abc/capsule_231x87.jpg', ih: 'def/header.jpg' }));
+  s.getItems = async (ids) => ids.map((id) => ({ id, name: 'G' + id, deck: 0, mt: '', ia: 'steam/apps/' + id + '/${FILENAME}?t=1', isc: id === 2 ? '' : 'abc/capsule_231x87.jpg', ih: 'def/header.jpg' }));
   const e = mk(s);
   await e.sync();
   const img = new Images(fs.mkdtempSync(path.join(os.tmpdir(), 'swi-')), new Throttle(() => 0), () => null, (id) => e.assetUrls(id), (id) => e.peekAssets(id));
@@ -459,7 +459,7 @@ function fakeImages(cached = []) {
 }
 async function previewEngine(mode, cached) {
   const s = fakeSteam();
-  s.getItems = async (ids) => ids.map((id) => ({ id, name: 'G' + id, tagids: [], disc: 0, orig: 100, fin: 100, st: 0, at: Date.now(), mt: id === 4 ? '' : `https://video/${id}.webm` }));
+  s.getItems = async (ids) => ids.map((id) => ({ id, name: 'G' + id, tagids: [], disc: 0, orig: 100, fin: 100, st: 0, at: Date.now(), deck: 0, mt: id === 4 ? '' : `https://video/${id}.webm` }));
   const e = mk(s, { previewDownload: mode });
   e.images = fakeImages(cached);
   await e.sync();
@@ -474,7 +474,7 @@ test('hover previews: saved for every game at Sync, downloaded for My list / eve
   assert.deepEqual(e.images.got, [], 'My list is empty: nothing to download');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sw-'));
   const s = fakeSteam();
-  s.getItems = async (ids) => ids.map((id) => ({ id, name: 'G' + id, tagids: [], disc: 0, orig: 100, fin: 100, st: 0, at: Date.now(), mt: `https://video/${id}.webm` }));
+  s.getItems = async (ids) => ids.map((id) => ({ id, name: 'G' + id, tagids: [], disc: 0, orig: 100, fin: 100, st: 0, at: Date.now(), deck: 0, mt: `https://video/${id}.webm` }));
   e = new Engine({ dir, steam: s, steamdb: null });
   e.setSettings({ username: 'alice', previewDownload: 'mine' });
   e.images = fakeImages([]);
@@ -543,7 +543,7 @@ test('games saved before preview addresses existed are refreshed once, even if r
   await e.sync();
   assert.equal(s.calls.length, 1, 'fresh data with a (possibly empty) preview field is not refetched');
   for (const id of [1, 2, 3, 4]) delete e.apps[id].mt; // what an older cache looks like
-  s.getItems = async (ids) => { s.calls.push(ids); return ids.map((id) => ({ id, name: 'G' + id, tagids: [], disc: 0, orig: 1, fin: 1, st: 0, at: Date.now(), mt: '' })); };
+  s.getItems = async (ids) => { s.calls.push(ids); return ids.map((id) => ({ id, name: 'G' + id, tagids: [], disc: 0, orig: 1, fin: 1, st: 0, at: Date.now(), deck: 0, mt: '' })); };
   await e.sync();
   assert.equal(s.calls.length, 2, 'refetched once');
   await e.sync();
@@ -576,11 +576,26 @@ test('lowest known SteamDB price is exposed per game, never above today\'s price
   const e = mk(fakeSteam());
   await e.sync();
   e.apps[1].fin = 900;
-  e.apps[1].db = { history: null, low: 700, more: true, allTimeLow: 500, at: Date.now() };
-  e.apps[2].db = { history: null, low: 300, allTime: true, at: Date.now() };
+  e.apps[1].db = { history: null, low: 700, more: true, allTimeLow: 500, at: Date.now(), deck: 0 };
+  e.apps[2].db = { history: null, low: 300, allTime: true, at: Date.now(), deck: 0 };
   e.apps[2].fin = 200; // cheaper today than anything recorded
   const g = (id) => e.getState().games.find((x) => x.id === id);
   assert.deepEqual([g(1).low, g(1).lowNote], [500, 'lowest ever recorded']);
   assert.equal(g(2).low, 200);
   assert.equal(g(3).low, null, 'no SteamDB data, no lowest price');
+});
+
+test('Steam Deck status is read from the store item and old caches are refreshed once', async () => {
+  const { normalizeItem } = require('../src/main/steam');
+  assert.equal(normalizeItem({ success: 1, appid: 1, name: 'A', platforms: { steam_deck_compat_category: 3 } }).deck, 3);
+  assert.equal(normalizeItem({ success: 1, appid: 2, name: 'B', platforms: { windows: true } }).deck, 0);
+  const s = fakeSteam();
+  const e = mk(s);
+  await e.sync();
+  await e.sync();
+  assert.equal(s.calls.length, 1);
+  for (const id of [1, 2, 3, 4]) delete e.apps[id].deck;
+  await e.sync();
+  assert.equal(s.calls.length, 2, 'refetched once to learn the Steam Deck status');
+  assert.ok(e.getState().games.every((g) => g.deck === 0));
 });
