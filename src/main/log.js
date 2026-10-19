@@ -9,7 +9,8 @@ const MAX = 1024 * 1024;
 const redact = (s) => String(s)
   .replace(/([?&](?:key|access_token|token)=)[^&\s"']+/gi, '$1***')
   .replace(/\bfc-[A-Za-z0-9]{8,}\b/g, 'fc-***')
-  .replace(/("(?:familyToken|apiKey|firecrawlKey)"\s*:\s*")[^"]*/g, '$1***');
+  .replace(/\bbu_[A-Za-z0-9_-]{8,}/g, 'bu_***')
+  .replace(/("(?:familyToken|apiKey|firecrawlKey|browserUseKey)"\s*:\s*")[^"]*/g, '$1***');
 
 function init(dir) {
   try {

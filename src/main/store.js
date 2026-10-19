@@ -7,7 +7,7 @@ const log = require('./log');
 class JsonFile {
   constructor(file, fallback) {
     this.file = file;
-    this.data = fallback;
+    this.data = { ...fallback }; // a copy: the fallback object is shared (e.g. DEFAULT_SETTINGS)
     this.timer = null;
     try {
       this.data = { ...fallback, ...JSON.parse(fs.readFileSync(file, 'utf8')) };

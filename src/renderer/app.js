@@ -368,11 +368,14 @@ async function openSettings() {
  <label>…or list family members' profiles (usernames or URLs, one per line; their game details must be public)<textarea id="s-mem">${esc(s.familyMembers)}</textarea></label>
  <label>Steam Web API key (optional: an alternative to signing in for reading your library; free at steamcommunity.com/dev/apikey)<input type="text" id="s-key" value="${esc(s.apiKey)}" autocomplete="off"></label>
  <label>Hover previews: download during Sync (about 2.5 MB each, from Steam)<select id="s-prev"><option value="mine"${s.previewDownload === 'mine' ? ' selected' : ''}>My list only</option><option value="all"${s.previewDownload === 'all' ? ' selected' : ''}>Whole wishlist (can be several GB)</option><option value="off"${s.previewDownload === 'off' ? ' selected' : ''}>Off: download when hovered</option></select></label>
- <label>Firecrawl API key (optional, replaces the SteamDB browser window)<input type="text" id="s-fc" value="${esc(s.firecrawlKey || '')}" autocomplete="off" placeholder="fc-…"></label>
- <label class="ck"><input type="checkbox" id="s-usefc"${s.useFirecrawl ? ' checked' : ''}> Use Firecrawl for SteamDB (no browser window or Cloudflare check; 1 credit per game for the lowest price ever + preview, more if the price graph is enabled below)</label>
+ <label>Load SteamDB data through<select id="s-src"><option value=""${!s.steamdbSource ? ' selected' : ''}>Browser window on this computer (free; you may have to solve a Cloudflare check)</option><option value="firecrawl"${s.steamdbSource === 'firecrawl' ? ' selected' : ''}>Firecrawl (API key; 1 credit per game for the lowest price ever + preview, more for the price graph)</option><option value="browseruse"${s.steamdbSource === 'browseruse' ? ' selected' : ''}>Browser Use (API key; a cloud browser that passes Cloudflare itself, price graph + preview, about $0.02 per hour)</option></select></label>
+ <div class="sm">Without the chosen service's API key the browser window is used.</div>
+ <label>Firecrawl API key<input type="text" id="s-fc" value="${esc(s.firecrawlKey || '')}" autocomplete="off" placeholder="fc-…"></label>
  <div class="row"><button class="btn" id="s-fctest">Test Firecrawl</button><span class="sm" id="s-fcres">Uses 1 credit.</span></div>
  <div class="row"><button class="btn" id="s-fcprobe">Find a way to get the price graph</button><span class="sm" id="s-fcprobeinfo">${s.fcHistoryMode === 'js' || s.fcHistoryMode === 'headers' ? 'Found: ' + s.fcHistoryMode + '. Up to 3 credits to re-check.' : s.fcHistoryMode === 'none' ? 'Not available through Firecrawl (last check).' : 'Not checked yet. Uses up to 3 credits.'}</span></div>
- <label>SteamDB background pace (time between games)<select id="s-pace"><option value=""${!s.bgPace ? ' selected' : ''}>Auto (about 30 s, or a few seconds with Firecrawl)</option><option value="slow"${s.bgPace === 'slow' ? ' selected' : ''}>Slow: 1-2 minutes</option><option value="medium"${s.bgPace === 'medium' ? ' selected' : ''}>Medium: 20-40 seconds</option><option value="fast"${s.bgPace === 'fast' ? ' selected' : ''}>Fast: 8-15 seconds (higher risk of a block)</option></select></label>
+ <label>Browser Use API key<input type="text" id="s-bu" value="${esc(s.browserUseKey || '')}" autocomplete="off" placeholder="bu_…"></label>
+ <div class="row"><button class="btn" id="s-butest">Test Browser Use</button><span class="sm" id="s-bures">Loads one game (under a minute of browser time).</span></div>
+ <label>SteamDB background pace (time between games)<select id="s-pace"><option value=""${!s.bgPace ? ' selected' : ''}>Auto (about 30 s, or a few seconds with Firecrawl or Browser Use)</option><option value="slow"${s.bgPace === 'slow' ? ' selected' : ''}>Slow: 1-2 minutes</option><option value="medium"${s.bgPace === 'medium' ? ' selected' : ''}>Medium: 20-40 seconds</option><option value="fast"${s.bgPace === 'fast' ? ' selected' : ''}>Fast: 8-15 seconds (higher risk of a block)</option></select></label>
  <label>Slowness multiplier (1 = default pacing, 2 = twice as slow)<input type="text" id="s-slow" value="${s.slowness}"></label>
  <label>“Why buy” reasons (one per line)<textarea id="s-why">${esc(whys)}</textarea></label>
  <hr>
@@ -395,12 +398,18 @@ async function openSettings() {
       out.textContent = 'Trying… (up to 3 credits)';
       try { await api.setSettings({ firecrawlKey: key }); const r = await api.firecrawlProbe(); out.textContent = (r.mode === 'none' ? '⚠ ' : '✓ ') + r.message; } catch (e) { out.textContent = '✗ ' + e.message; }
     };
+    d.querySelector('#s-butest').onclick = async () => {
+      const out = d.querySelector('#s-bures'), key = d.querySelector('#s-bu').value.trim();
+      if (!key) { out.textContent = 'Enter the API key first.'; return; }
+      out.textContent = 'Testing… (starting a cloud browser, can take a minute)';
+      try { await api.setSettings({ browserUseKey: key }); const r = await api.browserUseTest(); out.textContent = (r.ok ? '✓ ' : '⚠ ') + r.message; } catch (e) { out.textContent = '✗ ' + e.message; }
+    };
     d.querySelector('#s-sdb').onclick = () => api.steamdbCheck();
     d.querySelector('#s-clr').onclick = async () => { await api.cacheClear(); d.querySelector('#s-clr').textContent = 'Cleared'; };
   });
   if (r !== 'ok') return;
   const v = (id) => dlg.querySelector(id);
-  await api.setSettings({ country: v('#s-cc').value, useFamily: v('#s-fam').checked, familyMembers: v('#s-mem').value, apiKey: v('#s-key').value.trim(), firecrawlKey: v('#s-fc').value.trim(), previewDownload: v('#s-prev').value, bgPace: v('#s-pace').value, useFirecrawl: v('#s-usefc').checked, slowness: v('#s-slow').value });
+  await api.setSettings({ country: v('#s-cc').value, useFamily: v('#s-fam').checked, familyMembers: v('#s-mem').value, apiKey: v('#s-key').value.trim(), firecrawlKey: v('#s-fc').value.trim(), browserUseKey: v('#s-bu').value.trim(), previewDownload: v('#s-prev').value, bgPace: v('#s-pace').value, steamdbSource: v('#s-src').value, slowness: v('#s-slow').value });
   if (SW.st.profile) await api.setWhys(v('#s-why').value.split('\n'));
 }
 
@@ -511,7 +520,7 @@ function renderBg() {
     bar.innerHTML = `<div class="pmsg"><span>SteamDB background load: ${b.done + b.failed} of ${b.total}${b.failed ? ` (${b.failed} without data)` : ''} · ${b.next ? 'next game in <b id="bgcd"></b>' : `loading ${esc(b.name)}…`}</span><button class="btn" id="bgstop">Stop</button></div><div class="pbar"><i style="width:${pct}%"></i></div>`;
   } else if (b.blocked) {
     bar.hidden = false;
-    bar.innerHTML = `<div class="pmsg"><span>SteamDB background load stopped: ${esc(b.blocked.msg)} (${b.done} loaded so far). ${b.blocked.kind === 'challenge' ? 'Open the SteamDB page, solve the check, then resume.' : ''}</span><span class="row">${b.blocked.kind === 'firecrawl' ? '<button class="btn" id="bgsettings">Open Settings</button>' : '<button class="btn" id="bgcheck">Open SteamDB page</button>'}<button class="btn pri" id="bgresume">Resume</button></span></div>`;
+    bar.innerHTML = `<div class="pmsg"><span>SteamDB background load stopped: ${esc(b.blocked.msg)} (${b.done} loaded so far). ${b.blocked.kind === 'challenge' ? 'Open the SteamDB page, solve the check, then resume.' : ''}</span><span class="row">${b.blocked.kind === 'service' ? '<button class="btn" id="bgsettings">Open Settings</button>' : '<button class="btn" id="bgcheck">Open SteamDB page</button>'}<button class="btn pri" id="bgresume">Resume</button></span></div>`;
   } else if ((b.done || b.failed) && bgDismissed !== key) {
     bar.hidden = false;
     bar.innerHTML = `<div class="pmsg"><span>SteamDB background load finished: ${b.done} loaded${b.failed ? `, ${b.failed} had no data` : ''}.</span><button class="btn" id="bgdismiss" data-key="${esc(key)}">Dismiss</button></div>`;

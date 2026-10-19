@@ -330,10 +330,10 @@ test('engine prefers Firecrawl when enabled (short pacing) and stops cleanly on 
   const firecrawl = { fetchApp: async (id) => { if (mode === 'fatal') throw Object.assign(new Error('out of credits'), { fatal: true }); return dbOk(); } };
   const steamdb = fakeDb(() => { throw new Error('browser path must not be used'); });
   const e = new Engine({ dir, steam: fakeSteam(), steamdb, firecrawl });
-  e.setSettings({ username: 'alice', firecrawlKey: 'fc-x', useFirecrawl: true });
+  e.setSettings({ username: 'alice', firecrawlKey: 'fc-x', steamdbSource: 'firecrawl' });
   await e.sync();
   assert.ok(e.bgDelayMs() < 20000, 'Firecrawl pacing is short');
-  e.setSettings({ useFirecrawl: false });
+  e.setSettings({ steamdbSource: '' });
   const d = e.bgDelayMs();
   assert.ok(d >= 20000 && d <= 40000, 'browser pacing defaults to 20-40 s');
   e.setSettings({ bgPace: 'slow' });
@@ -341,13 +341,13 @@ test('engine prefers Firecrawl when enabled (short pacing) and stops cleanly on 
   e.setSettings({ bgPace: 'fast' });
   assert.ok(e.bgDelayMs() <= 15000, 'fast = 8-15 s');
   e.setSettings({ bgPace: '' });
-  e.setSettings({ useFirecrawl: true });
+  e.setSettings({ steamdbSource: 'firecrawl' });
   e.bgDelayMs = () => 5;
   e.listAdd(1); e.listAdd(2);
   mode = 'fatal';
   e.bgStart('mine');
   await waitStopped(e);
-  assert.equal(e.bg.blocked.kind, 'firecrawl');
+  assert.equal(e.bg.blocked.kind, 'service');
   mode = 'ok';
   e.bgStart('mine');
   await waitStopped(e);
@@ -598,4 +598,101 @@ test('Steam Deck status is read from the store item and old caches are refreshed
   await e.sync();
   assert.equal(s.calls.length, 2, 'refetched once to learn the Steam Deck status');
   assert.ok(e.getState().games.every((g) => g.deck === 0));
+});
+
+// ---- Browser Use (cloud browser driven over CDP) --------------------------------------------------
+function fakeBrowserUse({ status = 201, page = 'ok' } = {}) {
+  const reqs = [], cdp = [];
+  const fetchF = async (url, opts = {}) => {
+    reqs.push({ url, method: opts.method || 'GET', key: opts.headers && opts.headers['X-Browser-Use-API-Key'], body: opts.body ? JSON.parse(opts.body) : null });
+    if (url.endsWith('/json/version')) return new Response(JSON.stringify({ webSocketDebuggerUrl: 'wss://cdp.example/devtools/browser/1' }));
+    if (opts.method === 'POST') return new Response(JSON.stringify(status < 300 ? { id: 'b1', status: 'active', cdpUrl: 'https://cdp.example/b1', timeoutAt: new Date(Date.now() + 30 * 6e4).toISOString() } : { detail: 'nope' }), { status });
+    return new Response('{}');
+  };
+  class WS {
+    constructor(url) { this.url = url; this.l = {}; setTimeout(() => this._emit('open', {}), 0); }
+    addEventListener(k, f) { (this.l[k] = this.l[k] || []).push(f); }
+    removeEventListener(k, f) { this.l[k] = (this.l[k] || []).filter((x) => x !== f); }
+    _emit(k, ev) { for (const f of this.l[k] || []) f(ev); }
+    close() { this._emit('close', {}); }
+    send(raw) {
+      const m = JSON.parse(raw);
+      cdp.push(m);
+      let result = {};
+      if (m.method === 'Target.createTarget') result = { targetId: 't1' };
+      if (m.method === 'Target.attachToTarget') result = { sessionId: 's1' };
+      if (m.method === 'Runtime.evaluate') {
+        const value = m.params.expression.includes('readyState')
+          ? { href: 'https://steamdb.info/app/1/', ready: 'complete', title: page === 'challenge' ? 'Just a moment...' : 'App', blocked: page === 'challenge' }
+          : { url: 'https://steamdb.info/app/1/', title: 'App', videoCdn: 'https://video.example/', history: { status: 200, more: false, body: HIST_JSON() }, hover: { status: 200, length: 10, microtrailer: JSON.stringify({ video: { 'video/webm': '1/abc/microtrailer.webm' }, time: 7 }) } };
+        result = { result: { type: 'object', value } };
+      }
+      setTimeout(() => this._emit('message', { data: JSON.stringify({ id: m.id, result }) }), 0);
+    }
+  }
+  return { fetchF, WS, reqs, cdp };
+}
+
+test('Browser Use source: starts one cloud browser, loads SteamDB over CDP, reuses it, stops it on close', async () => {
+  const { BrowserUse } = require('../src/main/browseruse');
+  const { setFetch } = require('../src/main/http');
+  const f = fakeBrowserUse();
+  setFetch(f.fetchF);
+  const bu = new BrowserUse(new Throttle(() => 0), () => 'bu_test1234567', { WebSocket: f.WS });
+  const r = await bu.fetchApp(1672500, 'gb');
+  assert.equal(r.history.length, 3);
+  assert.equal(r.low, 6000);
+  assert.equal(r.gif, 'https://video.example/store_trailers/1/abc/microtrailer.webm?t=7');
+  const create = f.reqs.find((x) => x.method === 'POST');
+  assert.ok(create.url.endsWith('/api/v4/browsers'));
+  assert.equal(create.key, 'bu_test1234567');
+  assert.equal(create.body.proxyCountryCode, 'uk', 'GB maps to Browser Use\'s "uk"');
+  const nav = f.cdp.find((m) => m.method === 'Page.navigate');
+  assert.deepEqual([nav.params.url, nav.sessionId], ['https://steamdb.info/app/1672500/', 's1']);
+  assert.match(f.cdp.filter((m) => m.method === 'Runtime.evaluate').pop().params.expression, /GetPriceHistory\/\?appid=1672500&cc=gb/);
+  await bu.fetchApp(2, 'gb');
+  assert.equal(f.reqs.filter((x) => x.method === 'POST').length, 1, 'browser is reused between games');
+  assert.equal(f.cdp.filter((m) => m.method === 'Target.closeTarget').length, 2, 'each game closes its tab');
+  bu.close();
+  await new Promise((r) => setTimeout(r, 5));
+  assert.ok(f.reqs.some((x) => x.method === 'PATCH' && x.url.endsWith('/browsers/b1') && x.body.action === 'stop'));
+  setFetch((...a) => fetch(...a));
+});
+
+test('Browser Use source: bad key and no credits are fatal; a missing key never calls the API', async () => {
+  const { BrowserUse } = require('../src/main/browseruse');
+  const { setFetch } = require('../src/main/http');
+  for (const [status, re] of [[401, /rejected the API key/], [402, /out of credits/]]) {
+    const f = fakeBrowserUse({ status });
+    setFetch(f.fetchF);
+    const bu = new BrowserUse(new Throttle(() => 0), () => 'bu_test1234567', { WebSocket: f.WS });
+    await assert.rejects(() => bu.fetchApp(1, 'us'), (e) => e.fatal && re.test(e.message));
+  }
+  const f = fakeBrowserUse();
+  setFetch(f.fetchF);
+  await assert.rejects(() => new BrowserUse(new Throttle(() => 0), () => '', { WebSocket: f.WS }).fetchApp(1, 'us'), (e) => e.fatal);
+  assert.equal(f.reqs.length, 0);
+  setFetch((...a) => fetch(...a));
+});
+
+test('engine uses the SteamDB source picked in Settings, falling back to the browser window without a key', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sw-'));
+  fs.writeFileSync(path.join(dir, 'settings.json'), JSON.stringify({ useFirecrawl: true }));
+  const firecrawl = { fetchApp: async () => dbOk() }, browserUse = { fetchApp: async () => dbOk() }, steamdb = fakeDb(() => dbOk());
+  const e = new Engine({ dir, steam: fakeSteam(), steamdb, firecrawl, browserUse });
+  assert.equal(e.settings.steamdbSource, 'firecrawl', 'old Firecrawl checkbox carries over');
+  assert.equal('useFirecrawl' in e.settings, false);
+  assert.equal(e._source(), steamdb, 'no Firecrawl key: browser window');
+  e.setSettings({ steamdbSource: 'browseruse', browserUseKey: 'bu_x' });
+  assert.equal(e._source(), browserUse);
+  assert.ok(e.bgDelayMs() < 20000, 'Browser Use pacing is short');
+  e.setSettings({ steamdbSource: 'nonsense' });
+  assert.equal(e.settings.steamdbSource, '');
+  assert.equal(e._source(), steamdb);
+});
+
+test('log redacts Browser Use keys', () => {
+  const { redact } = require('../src/main/log');
+  assert.equal(redact('key bu_AbC123xyz_456 end'), 'key bu_*** end');
+  assert.equal(redact('{"browserUseKey":"whatever"}'), '{"browserUseKey":"***"}');
 });
