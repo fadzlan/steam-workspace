@@ -81,8 +81,8 @@ details.colmenu label.ck{display:flex;gap:8px;align-items:center;font-size:13px;
 .lowp.atlow{color:var(--good);font-weight:600}
 [hidden]{display:none!important}
 
-.gtitle{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.deck{display:inline-flex;line-height:0;flex:none}
+.gtitle{display:block}
+.deck{display:inline-flex;line-height:0;vertical-align:-3px;margin-left:8px}
 
 #pv{position:fixed;z-index:60;width:480px;max-width:calc(100vw - 16px);background:var(--panel);border:1px solid var(--bd);border-radius:8px;box-shadow:0 12px 36px #000a;pointer-events:none;overflow:hidden}
 #pv video,#pv img{display:block;width:100%;background:#000}
