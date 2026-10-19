@@ -29,5 +29,45 @@ function microtrailerUrl(videoCdn, json) {
 }
 
 const CHALLENGE_TITLE = /just a moment|attention required|checking your browser|verify you are human/i;
+// true while Cloudflare's check is on the page (evaluated inside the page)
+const CHALLENGE_SCRIPT = `!!document.querySelector('#challenge-form, #challenge-running, .cf-turnstile, [name="cf-turnstile-response"]')`;
 
-module.exports = { parseHistory, microtrailerUrl, CHALLENGE_TITLE };
+// Runs inside a loaded https://steamdb.info/app/<id>/ page: SteamDB's own two XHR endpoints (so the Cloudflare
+// cookie and referer apply): price history, and the hover card holding the micro-trailer.
+function appPageScript(appid, cc) {
+  const id = Number(appid);
+  return `(async () => {
+    const out = { url: location.href, title: document.title, videoCdn: document.body.dataset.videoCdn || '' };
+    const get = (u, accept) => fetch(u, { credentials: 'include', headers: { Accept: accept, 'X-Requested-With': 'XMLHttpRequest' } });
+    try {
+      const h = await get('/api/GetPriceHistory/?appid=${id}&cc=${encodeURIComponent(cc)}', 'application/json');
+      out.history = { status: h.status, more: h.headers.has('X-SteamDB-History-More'), body: await h.text() };
+    } catch (e) { out.historyErr = String(e); }
+    await new Promise((r) => setTimeout(r, 1500));
+    try {
+      const v = await get('/api/RenderAppHover/?appid=${id}', 'text/html');
+      const t = await v.text();
+      const el = new DOMParser().parseFromString(t, 'text/html').querySelector('.hover_video');
+      out.hover = { status: v.status, length: t.length, microtrailer: (el && el.dataset.microtrailer) || null };
+    } catch (e) { out.hoverErr = String(e); }
+    return out;
+  })()`;
+}
+
+// What appPageScript returned -> the fetchApp result. `who` labels the log lines ("SteamDB", "Browser Use SteamDB").
+function readAppPage(who, appid, r, log) {
+  let hist = null;
+  try { hist = r.history ? parseHistory(JSON.parse(r.history.body)) : null; } catch (e) { log.warn(`${who} history for ${appid}: ${e.message}`); }
+  const video = r.hover && r.hover.microtrailer ? microtrailerUrl(r.videoCdn, r.hover.microtrailer) : null;
+  log.info(`${who} ${appid}: history=${hist ? hist.history.length + ' points' : 'none'}${r.history && r.history.more ? ' (truncated: 2-year history)' : ''} preview=${video ? 'yes' : 'no'}`);
+  if (!hist || !video) {
+    log.info(`${who} ${appid} debug: ${JSON.stringify({
+      page: { url: r.url, title: r.title },
+      history: r.history ? { status: r.history.status, length: r.history.body.length, head: r.history.body.slice(0, 300) } : r.historyErr,
+      hover: r.hover ? { status: r.hover.status, length: r.hover.length, microtrailer: r.hover.microtrailer } : r.hoverErr,
+    })}`);
+  }
+  return { history: hist ? hist.history : null, low: hist ? hist.low : null, lowAt: hist ? hist.lowAt : null, more: !!(r.history && r.history.more), gif: video };
+}
+
+module.exports = { parseHistory, microtrailerUrl, CHALLENGE_TITLE, CHALLENGE_SCRIPT, appPageScript, readAppPage };

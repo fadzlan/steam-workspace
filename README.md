@@ -20,7 +20,7 @@ charts, and a personal buying list with a reason for each game.
   2. games whose **Steam price changed** since their SteamDB data was fetched (or whose sale has ended),
   3. games loaded before that are **on sale now**, **except those loaded in the last 5 days** (games already loaded and not on sale are left alone).
 
-  Inside each step, My list comes first, then games on sale (biggest discount first). Pace (*Settings → SteamDB background pace*): Auto = about 30 s between games (a few seconds through Firecrawl), or choose Slow (1-2 min), Medium (20-40 s) or Fast (8-15 s). At 30 s the whole wishlist takes about a day and a half. Games SteamDB had nothing for are skipped for a week. If SteamDB blocks it (Cloudflare check not solved in 3 minutes, or repeated errors) it stops, the button becomes available again, and a banner offers **Open SteamDB page** (to solve the check) and **Resume**. It does not continue after you close the app.
+  Inside each step, My list comes first, then games on sale (biggest discount first). Pace (*Settings → SteamDB background pace*): Auto = about 30 s between games (a few seconds through Firecrawl or Browser Use), or choose Slow (1-2 min), Medium (20-40 s) or Fast (8-15 s). At 30 s the whole wishlist takes about a day and a half. Games SteamDB had nothing for are skipped for a week. If SteamDB blocks it (Cloudflare check not solved in 3 minutes, or repeated errors) it stops, the button becomes available again, and a banner offers **Open SteamDB page** (to solve the check) and **Resume**. It does not continue after you close the app.
 - **Lowest price.** Once a game has SteamDB data, its lowest known price is shown in `( )` under the current price in both tables (blue when the game is at that price now). Hover it to see whether it is the 2-year or all-time low.
 - **Stale SteamDB data.** The sale a game's SteamDB data was fetched during is remembered; once that sale has ended, the My list history cell shows **Sale ended · update** so you can refresh it. Every entry also has a small ↻ refresh button.
 - **Hover previews.** Steam's own store data lists a short muted trailer for most games; the address is saved for every game at Sync, so hovering a thumbnail opens a large popover next to it that plays it (also for games never loaded from SteamDB). Games without a preview show their header image enlarged instead. The files are about 2.5 MB each, so *Settings → Hover previews* chooses what Sync downloads ahead of time: *My list only* (default), *Whole wishlist* (can be several GB) or *Off* (download on first hover). Cached previews are kept on disk.
@@ -90,7 +90,9 @@ Press **Sync**. Family-owned games then show a 👪 badge with the owner names, 
 
 ### SteamDB through Firecrawl (optional)
 
-If you have a [Firecrawl](https://firecrawl.dev) API key, put it in *Settings → Firecrawl API key*, tick **Use Firecrawl for SteamDB** and press **Test Firecrawl** (1 credit).
+*Settings → Load SteamDB data through* picks where SteamDB pages are loaded: the **browser window** on this computer (default), **Firecrawl**, or **Browser Use** (below). Without the chosen service's API key the browser window is used.
+
+If you have a [Firecrawl](https://firecrawl.dev) API key, put it in *Settings → Firecrawl API key*, choose **Firecrawl** and press **Test Firecrawl** (1 credit).
 SteamDB pages are then fetched by Firecrawl instead of the browser window, so there is **no Cloudflare check on your machine**.
 
 - **From 1 credit per game**: it reads the game's SteamDB app page, which lists the **lowest price ever recorded** in every currency (matched to your store country by today's Steam price) and the preview video link.
@@ -98,7 +100,19 @@ SteamDB pages are then fetched by Firecrawl instead of the browser window, so th
 - The background loader waits only 8-15 seconds between games instead of 1-2 minutes.
 - If Firecrawl rejects the key or runs out of credits, the background load stops, the banner says why and offers **Open Settings** and **Resume**.
 
-The key is stored in plain text in the app's `settings.json` (like the Steam API key) and is scrubbed from the log. Clear the checkbox to go back to the browser window.
+The key is stored in plain text in the app's `settings.json` (like the Steam API key) and is scrubbed from the log. Choose **Browser window** to go back.
+
+### SteamDB through Browser Use (optional)
+
+With a [Browser Use](https://browser-use.com) API key (`bu_…`), put it in *Settings → Browser Use API key*, choose **Browser Use** and press **Test Browser Use** (loads one game).
+The app starts a cloud browser at Browser Use, which gets past SteamDB's Cloudflare check by itself, and drives it the same way as the local window
+(the app page, then SteamDB's own price-history and hover-card requests), so you get the **price graph and the preview video** with **no window or check on your machine**.
+
+- No AI agent runs: you pay only for browser time, $0.02 per hour, billed per minute. The browser goes through a proxy in your store country and is stopped after 3 minutes without use, or when the app closes (Browser Use refunds the unused time).
+- The background loader waits only 8-15 seconds between games.
+- If Browser Use rejects the key or runs out of credits, the background load stops, the banner says why and offers **Open Settings** and **Resume**.
+
+The key is stored in `settings.json` like the other keys and is scrubbed from the log.
 
 ### SteamDB and Cloudflare
 

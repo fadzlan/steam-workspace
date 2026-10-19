@@ -8,6 +8,7 @@ const { setFetch } = require('./http');
 const { Steam } = require('./steam');
 const { SteamDB } = require('./steamdb');
 const { Firecrawl } = require('./firecrawl');
+const { BrowserUse } = require('./browseruse');
 const { Engine } = require('./engine');
 const { Images, EXT_MIME } = require('./images');
 const log = require('./log');
@@ -26,7 +27,7 @@ function createEngine() {
   log.init(path.join(app.getPath('userData'), 'logs'));
   log.info(`Steam Workspace ${app.getVersion()} electron=${process.versions.electron} ${process.platform} ${process.arch}`);
   const throttle = new Throttle(() => (engine ? engine.settings.slowness : 1));
-  engine = new Engine({ dir, steam: new Steam(throttle), steamdb: new SteamDB(throttle), firecrawl: new Firecrawl(throttle, () => engine && engine.settings.firecrawlKey), emit: (k) => send(k) });
+  engine = new Engine({ dir, steam: new Steam(throttle), steamdb: new SteamDB(throttle), firecrawl: new Firecrawl(throttle, () => engine && engine.settings.firecrawlKey), browserUse: new BrowserUse(throttle, () => engine && engine.settings.browserUseKey), emit: (k) => send(k) });
   engine.steamdb.onStatus = (m) => win && !win.isDestroyed() && win.webContents.send('hint', m);
   images = new Images(path.join(dir, 'images'), throttle, (id) => engine.hoverUrl(id), (id) => engine.assetUrls(id), (id) => engine.peekAssets(id));
   engine.images = images;
@@ -87,6 +88,7 @@ function registerIpc() {
   ipcMain.handle('bg:stop', wrap('bg:stop', () => engine.bgStop()));
   ipcMain.handle('firecrawl:test', wrap('firecrawl:test', () => engine.firecrawl.test()));
   ipcMain.handle('firecrawl:probe', wrap('firecrawl:probe', async () => { const r = await engine.firecrawl.probe(engine.settings.country.toLowerCase()); engine.setSettings({ fcHistoryMode: r.mode }); return r; }));
+  ipcMain.handle('browseruse:test', wrap('browseruse:test', () => engine.browserUse.test(engine.settings.country)));
   ipcMain.handle('steamdb:fetch', wrap('steamdb:fetch', (id) => engine.fetchSteamDb(id)));
   ipcMain.handle('steamdb:check', wrap('steamdb:check', () => engine.steamdb.showChallenge()));
   ipcMain.handle('steam:login', wrap('steam:login', steamLogin));
@@ -132,3 +134,4 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => app.quit());
+app.on('before-quit', () => engine && engine.browserUse.close()); // stop the cloud browser (refunds its unused time)

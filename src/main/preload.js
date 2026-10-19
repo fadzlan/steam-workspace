@@ -18,6 +18,7 @@ contextBridge.exposeInMainWorld('api', {
   setWhys: (a) => call('whys', a),
   firecrawlProbe: () => call('firecrawl:probe'),
   firecrawlTest: () => call('firecrawl:test'),
+  browserUseTest: () => call('browseruse:test'),
   bgStart: (scope) => call('bg:start', scope),
   bgStop: () => call('bg:stop'),
   steamdbFetch: (id) => call('steamdb:fetch', id),
