@@ -51,6 +51,7 @@ class Engine {
       const [lo, hi] = PACE[this.settings.bgPace] || PACE[this._remote() ? 'fast' : 'medium'];
       return lo + Math.random() * (hi - lo);
     };
+    this.bgCoolMs = (n) => 10 * 60000 * 2 ** (n - 1); // pause after SteamDB's n-th rate limit in a row
   }
 
   get settings() { return this.settingsF.data; }
@@ -437,7 +438,7 @@ class Engine {
   bgStart(scope = 'mine') {
     if (this.bg.running) return;
     if (!this._source()) throw new Error('SteamDB is not available.');
-    const bg = (this.bg = { running: true, scope, done: 0, failed: 0, noData: 0, total: this.bgQueue(scope).length, next: 0, current: 0, name: '', blocked: null, abort: new AbortController(), errors: 0 });
+    const bg = (this.bg = { running: true, scope, done: 0, failed: 0, noData: 0, limits: 0, cooling: false, total: this.bgQueue(scope).length, next: 0, current: 0, name: '', blocked: null, abort: new AbortController(), errors: 0 });
     log.info(`SteamDB background load started: scope=${scope}, ${bg.total} games`);
     this._bgLoop(bg).catch((e) => { log.error('background loop crashed', e); bg.running = false; bg.blocked = { kind: 'errors', msg: e.message }; this.emit('state'); });
     this.emit('state');
@@ -460,9 +461,19 @@ class Engine {
       this.emit('state');
       try {
         await this.fetchSteamDb(id, signal);
-        bg.done++; bg.errors = 0;
+        bg.done++; bg.errors = 0; bg.limits = 0;
       } catch (e) {
         if (signal.aborted) return finish();
+        if (e.rateLimited) { // SteamDB asked us to slow down: wait 10, 20, 40 min and retry the same game, then give up
+          if (++bg.limits > 3) { log.warn('background load stopped: SteamDB keeps rate-limiting'); return finish({ kind: 'rate', msg: 'SteamDB keeps rate-limiting requests. Try again in a few hours, or pick a slower pace in Settings' }); }
+          const wait = this.bgCoolMs(bg.limits);
+          Object.assign(bg, { next: Date.now() + wait, cooling: true });
+          log.warn(`SteamDB rate limit: pausing ${Math.round(wait / 60000)} min before retrying ${a.name} (${id})`);
+          this.emit('state');
+          await new Promise((resolve) => { const t = setTimeout(resolve, wait); signal.addEventListener('abort', () => { clearTimeout(t); resolve(); }, { once: true }); });
+          bg.cooling = false;
+          continue;
+        }
         if (e.challenge || e.fatal) { log.warn(`background load blocked: ${e.message}`); return finish({ kind: e.fatal ? 'service' : 'challenge', msg: e.message }); }
         a.dbSkip = Date.now();
         bg.failed++;

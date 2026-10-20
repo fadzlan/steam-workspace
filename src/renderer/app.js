@@ -519,10 +519,10 @@ function renderBg() {
   const pct = b.total ? Math.round(((b.done + b.failed) / b.total) * 100) : 0;
   if (b.running) {
     bar.hidden = false;
-    bar.innerHTML = `<div class="pmsg"><span>SteamDB background load: ${b.done + b.failed} of ${b.total}${b.failed ? ` (${bgMisses(b)})` : ''} · ${b.next ? 'next game in <b id="bgcd"></b>' : `loading ${esc(b.name)}…`}</span><button class="btn" id="bgstop">Stop</button></div><div class="pbar"><i style="width:${pct}%"></i></div>`;
+    bar.innerHTML = `<div class="pmsg"><span>SteamDB background load: ${b.done + b.failed} of ${b.total}${b.failed ? ` (${bgMisses(b)})` : ''} · ${b.cooling ? 'SteamDB asked to slow down, retrying in <b id="bgcd"></b>' : b.next ? 'next game in <b id="bgcd"></b>' : `loading ${esc(b.name)}…`}</span><button class="btn" id="bgstop">Stop</button></div><div class="pbar"><i style="width:${pct}%"></i></div>`;
   } else if (b.blocked) {
     bar.hidden = false;
-    bar.innerHTML = `<div class="pmsg"><span>SteamDB background load stopped: ${esc(b.blocked.msg)} (${b.done} loaded so far). ${b.blocked.kind === 'challenge' ? 'Open the SteamDB page, solve the check, then resume.' : ''}</span><span class="row">${b.blocked.kind === 'service' ? '<button class="btn" id="bgsettings">Open Settings</button>' : '<button class="btn" id="bgcheck">Open SteamDB page</button>'}<button class="btn pri" id="bgresume">Resume</button></span></div>`;
+    bar.innerHTML = `<div class="pmsg"><span>SteamDB background load stopped: ${esc(b.blocked.msg)} (${b.done} loaded so far). ${b.blocked.kind === 'challenge' ? 'Open the SteamDB page, solve the check, then resume.' : ''}</span><span class="row">${b.blocked.kind === 'service' || b.blocked.kind === 'rate' ? '<button class="btn" id="bgsettings">Open Settings</button>' : '<button class="btn" id="bgcheck">Open SteamDB page</button>'}<button class="btn pri" id="bgresume">Resume</button></span></div>`;
   } else if ((b.done || b.failed) && bgDismissed !== key) {
     bar.hidden = false;
     bar.innerHTML = `<div class="pmsg"><span>SteamDB background load finished: ${b.done} loaded${b.failed ? `, ${bgMisses(b)}` : ''}.</span><button class="btn" id="bgdismiss" data-key="${esc(key)}">Dismiss</button></div>`;
