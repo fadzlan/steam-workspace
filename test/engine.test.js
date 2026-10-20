@@ -175,6 +175,17 @@ test('SteamDB parsing helpers', () => {
   assert.ok(CHALLENGE_TITLE.test('Just a moment...') && !CHALLENGE_TITLE.test('Quake 4 · SteamDB'));
 });
 
+test('SteamDB page result: 429 is a rate limit, a missing video CDN falls back to Steam\'s', () => {
+  const { readAppPage } = require('../src/main/steamdb-parse');
+  const quiet = { info() {}, warn() {} };
+  const hover = { status: 200, length: 10, microtrailer: JSON.stringify({ video: { 'video/webm': '1/a/microtrailer.webm' } }) };
+  const limited = { url: 'u', title: 'SteamDB', history: { status: 429, more: false, body: '{"success":false,"error":"Please do not scrape."}' }, hover };
+  assert.throws(() => readAppPage('SteamDB', 1, limited, quiet), (e) => e.rateLimited === true);
+  const r = readAppPage('SteamDB', 1, { url: 'u', title: 'Hanya sebentar...', videoCdn: '', history: { status: 200, more: false, body: '{"success":true,"data":{"history":[{"x":1,"y":2}]}}' }, hover }, quiet);
+  assert.equal(r.gif, 'https://video.fastly.steamstatic.com/store_trailers/1/a/microtrailer.webm');
+  assert.equal(r.low, 200);
+});
+
 function fakeDb(behaviour) {
   const calls = [];
   return {
@@ -216,6 +227,35 @@ test('background load: wishlist scopes queue My list first, "sale" only discount
   assert.ok(e.bgQueue('all').includes(3));
 });
 
+test('background load leaves out unreleased and free games (no price history on SteamDB)', async () => {
+  const e = await bgEngine(dbOk);
+  e.apps[1].st = 2; e.apps[2].st = 1;
+  e.listAdd(1); e.listAdd(2); e.listAdd(3);
+  assert.deepEqual(e.bgQueue('mine'), [3]);
+  e.apps[1].st = 0; // released since
+  assert.deepEqual(e.bgQueue('mine'), [1, 3]);
+});
+
+test('background load backs off when SteamDB rate-limits, retries the same game, and gives up after 3 in a row', async () => {
+  const limited = () => { throw Object.assign(new Error('429'), { rateLimited: true }); };
+  const e = await bgEngine((id, n) => (n <= 2 ? limited() : dbOk()));
+  e.bgCoolMs = () => 5;
+  e.listAdd(1); e.listAdd(2);
+  e.bgStart('mine');
+  await waitStopped(e);
+  assert.deepEqual(e.steamdb.calls, [1, 1, 1, 2], 'game 1 retried after each pause');
+  assert.equal(e.bg.done, 2);
+  assert.equal(e.bg.failed, 0, 'a rate limit is not counted as "no data"');
+  assert.ok(!e.apps[1].dbSkip, 'and the game is not skipped for a week');
+  const s = await bgEngine(limited);
+  s.bgCoolMs = () => 5;
+  s.listAdd(1);
+  s.bgStart('mine');
+  await waitStopped(s);
+  assert.equal(s.bg.blocked.kind, 'rate');
+  assert.equal(s.steamdb.calls.length, 4);
+});
+
 test('background load stops and reports a block when SteamDB needs a check', async () => {
   const e = await bgEngine((id, n) => { if (n === 2) throw Object.assign(new Error('check not completed'), { challenge: true }); return dbOk(); });
   e.listAdd(1); e.listAdd(2); e.listAdd(3);
@@ -236,6 +276,7 @@ test('background load skips games SteamDB has nothing for and can be stopped', a
   e.bgStart('mine');
   await waitStopped(e);
   assert.equal(e.bg.failed, 1);
+  assert.equal(e.bg.noData, 1, 'counted as "no data", not as an error');
   assert.equal(e.bg.done, 1);
   assert.ok(!e.bgQueue('mine').includes(1), 'skipped for a week');
   const s = await bgEngine(dbOk);

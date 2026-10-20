@@ -54,11 +54,20 @@ function appPageScript(appid, cc) {
   })()`;
 }
 
+// Where SteamDB's micro-trailer paths live when the page did not say (it was still on Cloudflare's
+// interstitial, whose title is localized, e.g. "Hanya sebentar..."): Steam's own trailer CDN.
+const VIDEO_CDN = 'https://video.fastly.steamstatic.com/';
+
 // What appPageScript returned -> the fetchApp result. `who` labels the log lines ("SteamDB", "Browser Use SteamDB").
 function readAppPage(who, appid, r, log) {
+  if (r.history && r.history.status === 429) {
+    // SteamDB's rate limit ("Please do not scrape"): not a game without data, so the caller must back off and retry later
+    log.warn(`${who} ${appid}: SteamDB rate limit (HTTP 429)`);
+    throw Object.assign(new Error('SteamDB is rate-limiting requests (HTTP 429) and asks to slow down.'), { rateLimited: true });
+  }
   let hist = null;
   try { hist = r.history ? parseHistory(JSON.parse(r.history.body)) : null; } catch (e) { log.warn(`${who} history for ${appid}: ${e.message}`); }
-  const video = r.hover && r.hover.microtrailer ? microtrailerUrl(r.videoCdn, r.hover.microtrailer) : null;
+  const video = r.hover && r.hover.microtrailer ? microtrailerUrl(r.videoCdn || VIDEO_CDN, r.hover.microtrailer) : null;
   log.info(`${who} ${appid}: history=${hist ? hist.history.length + ' points' : 'none'}${r.history && r.history.more ? ' (truncated: 2-year history)' : ''} preview=${video ? 'yes' : 'no'}`);
   if (!hist || !video) {
     log.info(`${who} ${appid} debug: ${JSON.stringify({
