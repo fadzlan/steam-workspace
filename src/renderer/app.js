@@ -509,6 +509,8 @@ function renderFamilyFilter() {
 // ---- SteamDB background loader -----------------------------------------------------------------------------------
 let bgDismissed = '';
 const mmss = (ms) => { const t = Math.max(0, Math.round(ms / 1000)); return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`; };
+// "3 had no data, 2 failed": games SteamDB had nothing for, apart from loads that errored (timeouts etc.)
+const bgMisses = (b) => { const nd = b.noData || 0, err = b.failed - nd; return [nd && `${nd} had no data`, err && `${err} failed`].filter(Boolean).join(', '); };
 function renderBg() {
   const b = SW.st.bg || { running: false }, bar = $('#bgbar');
   $('#bgbtn').textContent = b.running ? 'Stop background load' : 'Load SteamDB in background';
@@ -517,13 +519,13 @@ function renderBg() {
   const pct = b.total ? Math.round(((b.done + b.failed) / b.total) * 100) : 0;
   if (b.running) {
     bar.hidden = false;
-    bar.innerHTML = `<div class="pmsg"><span>SteamDB background load: ${b.done + b.failed} of ${b.total}${b.failed ? ` (${b.failed} without data)` : ''} · ${b.next ? 'next game in <b id="bgcd"></b>' : `loading ${esc(b.name)}…`}</span><button class="btn" id="bgstop">Stop</button></div><div class="pbar"><i style="width:${pct}%"></i></div>`;
+    bar.innerHTML = `<div class="pmsg"><span>SteamDB background load: ${b.done + b.failed} of ${b.total}${b.failed ? ` (${bgMisses(b)})` : ''} · ${b.next ? 'next game in <b id="bgcd"></b>' : `loading ${esc(b.name)}…`}</span><button class="btn" id="bgstop">Stop</button></div><div class="pbar"><i style="width:${pct}%"></i></div>`;
   } else if (b.blocked) {
     bar.hidden = false;
     bar.innerHTML = `<div class="pmsg"><span>SteamDB background load stopped: ${esc(b.blocked.msg)} (${b.done} loaded so far). ${b.blocked.kind === 'challenge' ? 'Open the SteamDB page, solve the check, then resume.' : ''}</span><span class="row">${b.blocked.kind === 'service' ? '<button class="btn" id="bgsettings">Open Settings</button>' : '<button class="btn" id="bgcheck">Open SteamDB page</button>'}<button class="btn pri" id="bgresume">Resume</button></span></div>`;
   } else if ((b.done || b.failed) && bgDismissed !== key) {
     bar.hidden = false;
-    bar.innerHTML = `<div class="pmsg"><span>SteamDB background load finished: ${b.done} loaded${b.failed ? `, ${b.failed} had no data` : ''}.</span><button class="btn" id="bgdismiss" data-key="${esc(key)}">Dismiss</button></div>`;
+    bar.innerHTML = `<div class="pmsg"><span>SteamDB background load finished: ${b.done} loaded${b.failed ? `, ${bgMisses(b)}` : ''}.</span><button class="btn" id="bgdismiss" data-key="${esc(key)}">Dismiss</button></div>`;
   } else bar.hidden = true;
 }
 setInterval(() => { const el = $('#bgcd'), b = SW.st && SW.st.bg; if (el && b && b.next) el.textContent = mmss(b.next - Date.now()); }, 1000);

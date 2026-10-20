@@ -403,11 +403,13 @@ class Engine {
   // scope: 'mine' (My list), 'sale' (My list, then wishlist games on sale) or 'all' (My list, then the whole wishlist).
   // One game every 1-2 minutes (random), so SteamDB is never hammered. Stops by itself when SteamDB blocks us.
   // Which pass a game belongs to (0 = not needed right now):
-  //   1 never loaded from SteamDB
+  // Unreleased and free games are left out: they have no price history, and their preview comes from Steam.
+//   1 never loaded from SteamDB
   //   2 Steam's price changed since the SteamDB data was fetched, or the sale that data came from has ended
   //   3 loaded before and on sale now, unless it was loaded in the last 5 days (loaded and not on sale: nothing to refresh)
   _bgTier(a) {
     if (!a || !a.name || a.gone) return 0;
+    if (a.st > 0) return 0; // not released yet, or free: no price, so SteamDB has no price history to give
     if (a.dbSkip && Date.now() - a.dbSkip < 7 * DAY) return 0; // SteamDB had nothing / failed recently
     const db = a.db;
     if (!db) return 1;
@@ -435,7 +437,7 @@ class Engine {
   bgStart(scope = 'mine') {
     if (this.bg.running) return;
     if (!this._source()) throw new Error('SteamDB is not available.');
-    const bg = (this.bg = { running: true, scope, done: 0, failed: 0, total: this.bgQueue(scope).length, next: 0, current: 0, name: '', blocked: null, abort: new AbortController(), errors: 0 });
+    const bg = (this.bg = { running: true, scope, done: 0, failed: 0, noData: 0, total: this.bgQueue(scope).length, next: 0, current: 0, name: '', blocked: null, abort: new AbortController(), errors: 0 });
     log.info(`SteamDB background load started: scope=${scope}, ${bg.total} games`);
     this._bgLoop(bg).catch((e) => { log.error('background loop crashed', e); bg.running = false; bg.blocked = { kind: 'errors', msg: e.message }; this.emit('state'); });
     this.emit('state');
@@ -451,7 +453,7 @@ class Engine {
     const finish = (blocked) => { bg.running = false; bg.current = 0; bg.next = 0; bg.blocked = blocked || null; this.emit('state'); };
     while (!signal.aborted) {
       const queue = this.bgQueue(bg.scope);
-      if (!queue.length) { log.info(`SteamDB background load finished: ${bg.done} loaded, ${bg.failed} without data`); return finish(); }
+      if (!queue.length) { log.info(`SteamDB background load finished: ${bg.done} loaded, ${bg.noData} without data, ${bg.failed - bg.noData} failed`); return finish(); }
       const id = queue[0], a = this.apps[id];
       Object.assign(bg, { current: id, name: a.name, total: bg.done + bg.failed + queue.length, next: 0 });
       log.info(`SteamDB background load ${bg.done + bg.failed + 1}/${bg.total}: ${a.name} (${id})`);
@@ -464,7 +466,7 @@ class Engine {
         if (e.challenge || e.fatal) { log.warn(`background load blocked: ${e.message}`); return finish({ kind: e.fatal ? 'service' : 'challenge', msg: e.message }); }
         a.dbSkip = Date.now();
         bg.failed++;
-        if (e.noData) bg.errors = 0;
+        if (e.noData) { bg.noData++; bg.errors = 0; }
         else if (++bg.errors >= 3) { log.warn(`background load stopped after repeated errors: ${e.message}`); return finish({ kind: 'errors', msg: e.message }); }
         log.warn(`background load: ${a.name} (${id}) skipped: ${e.message}`);
         this.appsF.save();

@@ -216,6 +216,15 @@ test('background load: wishlist scopes queue My list first, "sale" only discount
   assert.ok(e.bgQueue('all').includes(3));
 });
 
+test('background load leaves out unreleased and free games (no price history on SteamDB)', async () => {
+  const e = await bgEngine(dbOk);
+  e.apps[1].st = 2; e.apps[2].st = 1;
+  e.listAdd(1); e.listAdd(2); e.listAdd(3);
+  assert.deepEqual(e.bgQueue('mine'), [3]);
+  e.apps[1].st = 0; // released since
+  assert.deepEqual(e.bgQueue('mine'), [1, 3]);
+});
+
 test('background load stops and reports a block when SteamDB needs a check', async () => {
   const e = await bgEngine((id, n) => { if (n === 2) throw Object.assign(new Error('check not completed'), { challenge: true }); return dbOk(); });
   e.listAdd(1); e.listAdd(2); e.listAdd(3);
@@ -236,6 +245,7 @@ test('background load skips games SteamDB has nothing for and can be stopped', a
   e.bgStart('mine');
   await waitStopped(e);
   assert.equal(e.bg.failed, 1);
+  assert.equal(e.bg.noData, 1, 'counted as "no data", not as an error');
   assert.equal(e.bg.done, 1);
   assert.ok(!e.bgQueue('mine').includes(1), 'skipped for a week');
   const s = await bgEngine(dbOk);
